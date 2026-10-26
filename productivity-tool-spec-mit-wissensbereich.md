@@ -2,6 +2,31 @@
 
 Status: abgestimmter Funktionsumfang, technische Integrationsdetails zu validieren.
 
+## Ergänzende verbindliche Bedienregeln (26.10.2026, zweite Überarbeitung)
+
+Diese Regeln haben Vorrang vor abweichenden älteren Erledigungs-, Undo-, Speicher- und Startvorgaben:
+
+- **Kaskadierende Erledigung:** Ein Elternpunkt darf immer abgehakt werden. Seine sämtlichen Nachfahren werden dabei ebenfalls erledigt. **Undo** stellt die Offen-/Erledigt-Zustände aller betroffenen Punkte so wieder her, wie sie vor genau diesem Vorgang waren; zuvor bereits erledigte Kinder bleiben erledigt. Text, Notizen, Kategorien und spätere unabhängige Änderungen werden dadurch nicht zurückgesetzt. Beim Ausblenden laufender Sessions bleibt die bestehende Warnung erhalten, auch wenn diese an Nachfahren hängen.
+- **Sofortiges automatisches Speichern:** Aufgabenaktionen und Texteingaben werden ohne manuelles Save atomisch gespeichert. Ein dauerhaft sichtbarer Status meldet **All changes saved** oder einen tatsächlichen Schreibfehler. Das TXT-Dateieditor-Verhalten im Wissensbereich bleibt automatische Speicherung nach kurzer Eingabepause plus Speichern beim Dokumentwechsel; Dateikonflikte dürfen weiterhin nicht still überschrieben werden.
+- **Auswahl ist keine Bearbeitung:** Ein einfacher Klick wählt die Zeile aus und lässt ihren Text und die Zeilenfarbe vollständig sichtbar. Der Texteditor öffnet nur durch einen expliziten Bearbeitungsschritt wie Doppelklick/F2; neue Punkte dürfen weiterhin sofort zur Eingabe geöffnet werden. Eine Auswahlmarkierung darf den Zeileninhalt nicht übermalen.
+- **Zeilenbreite Notizen:** Das Notizfeld eines Aufgabenpunkts spannt über alle Tabellenspalten. Es enthält ein zugänglich beschriftetes Trash-Icon **Delete note**. Löschen erfolgt ohne Bestätigung; eine eigene Undo-Mitteilung stellt den gelöschten Notiztext wieder her. Mehrere Undo-Mitteilungen sind unabhängig.
+- **Systemweite Reminder:** Auf macOS startet der normale Starter die echte GetItDone-App mit eigener Bundle-Identität und nativer UserNotifications-Anbindung. Ein veralteter Build wird automatisch neu gebaut. Der Python-Entwicklungsprozess darf nicht suggerieren, dass er dieselbe native Zustellung garantiert. Die App prüft Berechtigung und Bannerstatus, meldet blockierte Mitteilungen ausdrücklich und bietet Zugang zu den Systemeinstellungen. Eine Testmitteilung muss tatsächlich durch die systemweite Mitteilungszentrale angenommen und dort nachgewiesen werden. Fokus-/Nicht-stören-Regeln bleiben Betriebssystemvorgaben. Es wird kein zusätzlicher Hintergrunddienst eingerichtet.
+- **Modernisierte ruhige Oberfläche:** Klarere Tabs, abgerundete Eingabefelder und dezente Auswahlmarkierungen modernisieren die kompakte englische Oberfläche, ohne zusätzliche Dashboards oder Aufgabenhierarchien einzuführen.
+
+## Verbindliche UX-Überarbeitung (26.10.2026)
+
+Die folgenden Nutzerentscheidungen ersetzen bei Widersprüchen die bisherigen Vorgaben zu Sprache, Farbkategorien, Reminder-Bedienung und Session-Aktionen. Die Daten bleiben lokal; bestehende Aufgaben und Session-Verknüpfungen werden erhalten.
+
+- **Englische Programmoberfläche:** Alle app-eigenen Menüs, Dialoge, Schaltflächen, Tooltips, Status- und Fehlermeldungen verwenden Englisch. Die Bereiche heißen **Tasks** und **Knowledge**. Inhalte und selbst vergebene Kategorienamen werden nicht übersetzt. Betriebssystemeigene Dialogelemente können der Systemsprache folgen.
+- **Direkte Farbauswahl:** Ein Klick auf die schmale Spalte **Color** öffnet eine kompakte **4×4-Palette mit 16 deutlich unterschiedlichen Farben**. Ein weiterer Klick weist die Farbe sofort zu und speichert sie automatisch. Es gibt keine Namenseingabe, Einstellungsseite oder zusätzliche Bestätigung für diese Zuordnung. **No color** entfernt die Zuordnung. Vorhandene Kategorien mit derselben Farbe werden wiederverwendet; sonst entsteht automatisch eine Kategorie mit englischem Farbnamen. Die erweiterte Kategorienverwaltung darf weiterhin verfügbar bleiben.
+- **Ganze Aufgabenzeile einfärben:** Die gewählte Farbe ist der tatsächliche Hintergrund der kompletten Aufgabenzeile einschließlich Text, Checkboxbereich, Color-, Reminder-, Status- und Aktionszellen. Keine bloße Farbmarkierung und keine nur schwache Tönung. Text und Icons erhalten eine kontrastreiche Vordergrundfarbe. Die Auswahl wird zusätzlich durch eine Kontur kenntlich gemacht. Unterpunkte übernehmen die Farbkategorie nicht automatisch. Farbnamen sind mindestens per Tooltip, zugänglichem Namen und Filter erkennbar. Die Color-Spalte bleibt kompakt (etwa 56 Pixel).
+- **Klarere Hierarchie:** Stärkere Einrückung, sichtbare Verbindungslinien und gemeinsame farbige Leisten kennzeichnen zusammengehörige Eltern-/Kindgruppen. Hauptpunkte sind fett, höher und durch Trennlinien sowie neutrale Hintergrundabstufungen von Unterpunkten und dem nächsten Hauptpunkt unterscheidbar. Notizen und Sessions bleiben optisch untergeordnete Unterzeilen. Die Hierarchiemarkierungen funktionieren unabhängig von einer gewählten Zeilenfarbe und verändern das Aufgabenmodell nicht.
+- **Reminder ohne versteckten Aktivierungsschritt:** Im Dialog **Reminder** genügt es, Datum und Uhrzeit zu wählen und **Save** zu klicken. Der Termin wird immer gesetzt, unmittelbar in der Reminder-Zelle angezeigt, automatisch gespeichert und bei Fälligkeit verarbeitet. Kein standardmäßig deaktiviertes Kontrollkästchen. Zum Entfernen eines bestehenden Termins gibt es **Remove reminder**. Speichern setzt den Benachrichtigungszustand zurück. Zeitzonen, einmalige Auslösung, erledigte Aufgaben, verpasste Termine und native Benachrichtigungen folgen weiterhin den bisherigen Regeln.
+- **Eine Session-Aktion:** Eine Session-Zeile hat nur **Resume** zum Öffnen/Fortsetzen und ein Details-Icon. Läuft ihr Terminalprozess bereits, fokussiert Resume diesen Tab. Andernfalls startet Resume unmittelbar die gespeicherte native Session in einem neuen Terminalprozess. Es gibt kein zusätzliches Open und keine zusätzliche Resume-Bestätigung. Eine fehlende native Session-ID muss weiterhin angegeben werden. Eine neue Session wird ausschließlich über **New session** am Aufgabenpunkt erzeugt. Bestätigungen beim Beenden laufender Prozesse bleiben bestehen.
+- **Kompakte Icons:** Häufige Zeilenaktionen wie Notiz, neue Session und weitere Aktionen sowie sekundäre Werkzeugleisten verwenden eindeutige Icons statt durchgehend beschrifteter Buttons. Jeder reine Icon-Button besitzt einen englischen Tooltip und zugänglichen Namen und bleibt per Tastatur bedienbar. Zentrale Aktionen wie Resume und Add item dürfen ein Label behalten.
+
+Zusätzliche Abnahme: Alle 16 Farben lassen sich direkt anklicken und über alle Spalten als Hintergrund nachweisen; Save eines neuen Reminders ohne weiteren Schalter erzeugt einen sichtbaren, persistierten Termin, der genau einmal ausgelöst wird; Entfernen funktioniert explizit; Session-Zeilen enthalten kein zusätzliches Open; mindestens drei Hierarchieebenen und aufeinanderfolgende Hauptpunkte sind visuell klar zugeordnet; die app-eigene Oberfläche ist englisch.
+
 ## 1. Ziel
 
 Eine einfache lokale Desktop-App bündelt schnelle Notizen, Aufgaben, Farbkategorien, zeitliche Reminder und Coding-Agent-Sessions. Sie ersetzt das Springen zwischen OneNote, Textdateien, Outlook-Remindern und separaten Agent-Terminals.
@@ -65,7 +90,7 @@ Die visuelle Referenz ist die **überarbeitete Enterprise-Mockup-Richtung**: hel
 Ein Stichpunkt enthält Text, optionale Notizen, Unterpunkte, genau null oder eine Farbkategorie, optional einen Reminder und beliebig viele Session-Verknüpfungen.
 
 - Abgehakte Punkte verschwinden aus der Standardansicht; über Filter sind sie wieder sichtbar.
-- Ein Elternpunkt darf erst abgehakt werden, wenn sämtliche Nachfahren erledigt sind. Keine automatische Erledigung von Unterpunkten.
+- Beim Abhaken eines Elternpunkts werden sämtliche Nachfahren automatisch mit erledigt. Undo stellt ihre jeweiligen vorherigen Zustände wieder her.
 - Das Abhaken eines letzten Unterpunkts hakt den Elternpunkt nicht automatisch ab.
 - Läuft eine verknüpfte Session, erscheint vor dem Abhaken eine Bestätigung: Der Punkt wird ausgeblendet, die Sessions laufen weiter.
 - Diese Bestätigung beendet keine Prozesse.
@@ -405,7 +430,7 @@ Für den ergänzten Wissensbereich ebenfalls nicht vorgesehen: cloudbasierte Dok
 
 - Auf Windows und macOS können Punkte inklusive Unterpunkten und Notizen angelegt und nach Neustart verlustfrei geladen werden.
 - Pro Punkt höchstens eine frei definierbare Farbkategorie; Legende und Filter aktualisieren sich automatisch.
-- Erledigte Punkte werden standardmäßig ausgeblendet. Elternpunkte mit offenen Nachfahren können nicht abgehakt werden.
+- Erledigte Punkte werden standardmäßig ausgeblendet. Elternpunkte erledigen offene Nachfahren mit; Undo stellt den vorherigen gemischten Zustand wieder her.
 - Agenten starten ausschließlich im integrierten Terminal mit korrektem Arbeitsverzeichnis; Clipboard enthält nur den Stichpunkttext.
 - Mehrere Session-Zeilen pro Punkt und unabhängige Terminal-Tabs funktionieren.
 - Laufstatus bildet Prozesszustand ab. Neuer Output wird nur für nicht sichtbare Terminals als ungelesen markiert.
@@ -431,3 +456,19 @@ Für den ergänzten Wissensbereich ebenfalls nicht vorgesehen: cloudbasierte Dok
 - Neue und vorhandene TXT-Dateien können bearbeitet und erneut gespeichert werden, ohne dass vorhandene Dateien stillschweigend überschrieben oder externe Änderungen unbemerkt verworfen werden.
 - Ungültige Dateinamen, nicht verfügbare Ordner, Lesefehler, unbekannte Formate und Schreibfehler führen zu verständlichen Meldungen statt Datenverlust.
 - Der Wissensbereich entspricht der sachlichen Enterprise-/OneNote-Optik: kompakte Titelliste, großer Inhaltsbereich, einfache Werkzeugleiste und keine dominierenden Karten oder Dashboards.
+
+
+### Ergänzung: verständlicher Agent-Kontext (26.10.2026)
+
+Der rechte Bereich ist unabhängig von Sessions benutzbar. Ein Agent-Auswahlfeld zeigt installierte, ausführbare Coding-CLIs; der Arbeitsordner kann separat gewählt werden. Bei Auswahl einer Session werden deren Agent und Ordner übernommen. Drei Tabs zeigen Skills, MCPs und Instructions mit Anzahl, Herkunft, Status und lesbarer Dateivorschau. Globale, gemeinsame und geerbte Instructions müssen nachvollziehbar sein; verdrängte Codex-AGENTS.md-Dateien werden als „Overridden“ gekennzeichnet.
+
+Die UI bleibt Englisch. Verfügbare bzw. registrierte Skills sind klar von tatsächlich in eine Unterhaltung geladenen Skill-Inhalten zu unterscheiden. Konfigurierte MCPs sind keine bestätigten Verbindungen. Codex liefert seine Skill-Registry über den App-Server, OpenCode v2 registrierte Skills und MCP-Status über lesende API-Aufrufe. Ohne Laufzeitnachweis wird kein „Loaded“ behauptet. Keine Modell-Turns, MCP-Starts oder Änderungen an Agent-Konfigurationen zur Inspektion. MCP-Credentials, URLs, Umgebungswerte und Befehlsargumente werden nicht angezeigt. Laufende Sessions können einen älteren Instruction-Stand haben; zusätzliche CLI-Optionen, Imports und Plugin-Regeln können den Kontext erweitern.
+
+### Ergänzung: kompakte Zeilen
+
+Hauptpunkte nutzen 28 px statt 40 px, Unterpunkte 26 px statt 34 px. Aktionsicons, Checkboxen, Hinzufügen-Zeile und Tabellenkopf werden entsprechend kompakter. Mehrzeilige Agent-Statusanzeigen und Notizen behalten den benötigten Platz.
+
+
+### Ergänzung: eigener Agent-Tab
+
+Skills, MCPs und Instructions werden im eigenen oberen Tab „Agent context“ neben „Tasks“ und „Knowledge“ angezeigt. In Tasks gibt es keinen rechten Kontextbereich mehr; die Aufgaben nutzen die gesamte Breite.
