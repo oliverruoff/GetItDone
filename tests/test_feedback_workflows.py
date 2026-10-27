@@ -38,6 +38,13 @@ def window(qtbot, tmp_path):
 def test_expansion_saved_instantly_and_restored(window, qtbot):
     tasks = window.tasks
     ids = [i["id"] for i in window.notebook.items]
+    assert tasks.expansion_button.accessibleName() == "Collapse all"
+    qtbot.mouseClick(tasks.expansion_button, Qt.LeftButton)
+    assert all(not row.isExpanded() for row in tasks.rows.values())
+    assert tasks.expansion_button.accessibleName() == "Expand all"
+    qtbot.mouseClick(tasks.expansion_button, Qt.LeftButton)
+    assert all(row.isExpanded() for row in tasks.rows.values())
+    assert tasks.expansion_button.accessibleName() == "Collapse all"
     tasks.rows[ids[1]].setExpanded(False)
     tasks.rows[ids[0]].setExpanded(False)
     state = Store(window.store.folder).load()["settings"]["task_view"]
@@ -57,11 +64,12 @@ def test_expansion_saved_instantly_and_restored(window, qtbot):
 def test_icon_controls_and_plus_visibility(window, qtbot):
     tasks = window.tasks
     controls = {b.accessibleName(): b for b in tasks.findChildren(QPushButton)}
-    assert controls["Expand all"].text() == controls["Collapse all"].text() == ""
+    assert "Expand all" not in controls
+    assert controls["Collapse all"].text() == ""
     qtbot.mouseClick(controls["Collapse all"], Qt.LeftButton)
     assert all(not row.isExpanded() for row in tasks.rows.values())
     assert len([r for r in tasks.rows.values() if not tasks.tree.visualItemRect(r).isEmpty()]) == 1
-    qtbot.mouseClick(controls["Expand all"], Qt.LeftButton)
+    qtbot.mouseClick(tasks.expansion_button, Qt.LeftButton)
     assert all(row.isExpanded() for row in tasks.rows.values())
     parent = window.notebook.items[0]["id"]
     row = tasks.rows[parent]
@@ -188,7 +196,7 @@ def test_schedule_crud_run_inbox_and_navigation(window, qtbot, monkeypatch):
     assert not Store(window.store.folder).load()["scheduled_jobs"][0]["enabled"]
     panel.run_now()
     qtbot.waitUntil(lambda: not window.scheduler.active)
-    assert panel.runs.count() == 1
+    assert panel.runs.topLevelItemCount() == 1
     assert "INBOX_RESULT" in panel.output.toPlainText()
     run = panel.current_run()
     assert run["session_id"] in {s["id"] for s in window.notebook.data["sessions"]}
@@ -206,7 +214,7 @@ def test_schedule_crud_run_inbox_and_navigation(window, qtbot, monkeypatch):
     assert panel.current_job()["prompt"] == "Run prompt"
     monkeypatch.setattr("app.ui.scheduled.confirm", lambda *args: True)
     panel.delete()
-    assert not window.scheduler.jobs and panel.runs.count() == 0
+    assert not window.scheduler.jobs and panel.runs.topLevelItemCount() == 0
     assert Store(window.store.folder).load()["sessions"]  # Deleting a job preserves session links.
 
 

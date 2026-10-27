@@ -90,6 +90,26 @@ def validate(data):
             fail("Invalid saved agent reply.")
         if "reply_unread" in session and type(session["reply_unread"]) is not bool:
             fail("Invalid agent reply state.")
+        process_runs = session.get("process_runs", [])
+        if not isinstance(process_runs, list):
+            fail("Invalid agent process history.")
+        for run in process_runs:
+            if (not isinstance(run, dict) or not isinstance(run.get("id"), str) or not run["id"]
+                    or run["id"] in ids or run.get("status") not in
+                    ("running", "completed", "failed", "stopped", "interrupted")
+                    or not isinstance(run.get("started_at"), str)
+                    or not isinstance(run.get("finished_at"), (str, type(None)))):
+                fail("Invalid agent process run.")
+            ids.add(run["id"])
+            try:
+                for value in (run["started_at"], run.get("finished_at")):
+                    if value is not None and datetime.fromisoformat(value).tzinfo is None:
+                        fail("Agent process history needs a time zone.")
+            except ValueError:
+                fail("Invalid agent process timestamp.")
+            reply = run.get("last_reply")
+            if reply is not None and (not isinstance(reply, dict) or not isinstance(reply.get("text"), str)):
+                fail("Invalid saved execution reply.")
     settings = data["settings"]
     for key in ("default_workdir", "default_agent", "knowledge_folder", "knowledge_last_file"):
         if key in settings and not isinstance(settings[key], str):

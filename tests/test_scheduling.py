@@ -143,3 +143,99 @@ def test_storage_rejects_malformed_schedule_and_view(tmp_path):
     book.data["settings"]["task_view"] = {"expanded": {"id": "yes"}}
     with pytest.raises(StorageError):
         validate(book.data)
+
+
+def test_inbox_hides_terminal_codes_but_preserves_raw_output(qtbot, tmp_path):
+    from app.ui.scheduled import Scheduled
+
+    book = Notebook()
+    scheduler = Scheduler(book, lambda: True)
+    job = make_job(tmp_path)
+    raw = "\x1b[0m> build\x1b[0m\n\x1b]0;Terminal title\x07Result: 5017\n"
+    run = dict(id=uid(), started_at=now_iso(), status="completed", agent="opencode",
+               workdir=str(tmp_path), prompt="Calculate", output=raw, session_id=None)
+    job["runs"].append(run)
+    scheduler.jobs.append(job)
+    panel = Scheduled(scheduler)
+    qtbot.addWidget(panel)
+    assert "Result: 5017" in panel.output.toPlainText()
+    assert "\x1b" not in panel.output.toPlainText()
+    assert "Terminal title" not in panel.output.toPlainText()
+    panel.raw.setChecked(True)
+    assert raw in panel.output.toPlainText()
+    assert run["output"] == raw
+
+
+def test_run_history_selection_isolated_and_preserved_on_refresh(qtbot, tmp_path):
+    from PySide6.QtCore import Qt
+
+    from app.ui.scheduled import Scheduled
+
+    book = Notebook()
+    scheduler = Scheduler(book, lambda: True)
+    for title in ("First schedule", "Second schedule"):
+        job = make_job(tmp_path)
+        job["title"] = title
+        for number in range(3):
+            at = datetime.now().astimezone() - timedelta(hours=3-number)
+            job["runs"].append(dict(
+                id=uid(), started_at=at.isoformat(), finished_at=(at + timedelta(seconds=5)).isoformat(),
+                status="failed" if number == 2 else "completed", output=f"{title} output {number}",
+                prompt=f"Original prompt {number}", agent="opencode", workdir=str(tmp_path), session_id=None))
+        scheduler.jobs.append(job)
+    panel = Scheduled(scheduler)
+    qtbot.addWidget(panel)
+    panel.resize(1100, 760)
+    panel.show()
+    assert panel.runs.topLevelItemCount() == 3
+    assert panel.summary.text() == "3 total · 2 completed · 1 failed"
+    assert panel.runs.topLevelItem(0).text(0) == "#3"
+    assert panel.runs.topLevelItem(0).text(3) == "5s"
+    assert panel.output.toPlainText() == "First schedule output 2"
+    older = panel.runs.topLevelItem(2)
+    qtbot.mouseClick(panel.runs.viewport(), Qt.LeftButton,
+                     pos=panel.runs.visualItemRect(older).center())
+    assert panel.output.toPlainText() == "First schedule output 0"
+    assert "Original prompt 0" in panel.run_context.toPlainText()
+    # Editing the current schedule must not rewrite a historical run's prompt.
+    scheduler.jobs[0]["prompt"] = "Edited prompt"
+    scheduler.changed.emit()
+    assert panel.output.toPlainText() == "First schedule output 0"
+    assert "Original prompt 0" in panel.run_context.toPlainText()
+    assert panel.output_title.text() == "Output · Run #1"
+    panel.jobs.setCurrentRow(1)
+    assert panel.output.toPlainText() == "Second schedule output 2"
+    panel.jobs.setCurrentRow(0)
+    assert panel.output.toPlainText() == "First schedule output 0"
+
+
+def test_empty_history_and_finished_schedule_can_be_scheduled_again(qtbot, tmp_path):
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication
+
+    from app.ui.scheduled import Scheduled, ScheduleDialog
+
+    book = Notebook()
+    scheduler = Scheduler(book, lambda: True)
+    job = make_job(tmp_path)
+    job.update(enabled=False, next_at=None)
+    scheduler.jobs.append(job)
+    panel = Scheduled(scheduler)
+    qtbot.addWidget(panel)
+    assert panel.summary.text() == "0 total"
+    assert panel.output.toPlainText() == ""
+    assert "No runs yet" in panel.output.placeholderText()
+    assert not panel.copy_button.isEnabled()
+    assert not panel.open_button.isEnabled()
+    assert panel.pause.text() == "Schedule again"
+
+    def save_again():
+        dialog = QApplication.activeModalWidget()
+        assert isinstance(dialog, ScheduleDialog)
+        assert dialog.enabled.isChecked()
+        dialog.save()
+
+    QTimer.singleShot(0, save_again)
+    panel.toggle()
+    assert job["enabled"] and job["next_at"]
+    assert not job["runs"]  # Saving the new date must not trigger Run now.

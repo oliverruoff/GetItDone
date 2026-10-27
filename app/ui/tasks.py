@@ -292,6 +292,7 @@ class Tasks(QWidget):
         super().__init__(parent)
         self.notebook = notebook
         self.terminals = terminal_lookup
+        self.scheduled_runs = {}
         self.rows = {}
         self.session_rows = {}
         self.view_state = notebook.data["settings"].setdefault("task_view", {})
@@ -315,8 +316,8 @@ class Tasks(QWidget):
         filterbar.addWidget(self.search, 1)
         filterbar.addWidget(self.status)
         layout.addLayout(filterbar)
-        filterbar.addWidget(icon_button("expand", "Expand all", lambda: self.set_all_expanded(True)))
-        filterbar.addWidget(icon_button("collapse", "Collapse all", lambda: self.set_all_expanded(False)))
+        self.expansion_button = icon_button("collapse", "Collapse all", self.toggle_all_expanded)
+        filterbar.addWidget(self.expansion_button)
         self.tree = TaskTree()
         self.tree.setObjectName("taskTree")
         self.tree.setHeaderLabels(["Todos", "Color", "Reminder", "Agent status", "Actions"])
@@ -393,7 +394,19 @@ class Tasks(QWidget):
     def expansion_changed(self, row, expanded):
         if not self.building and row.data(0, ROLE + 1) == "item":
             self.view_state.setdefault("expanded", {})[row.data(0, ROLE)] = expanded
+            self.update_expansion_button()
             self.save_view()
+
+    def toggle_all_expanded(self):
+        self.set_all_expanded(not any(row.isExpanded() for row in self.rows.values()))
+
+    def update_expansion_button(self):
+        expanded = any(row.isExpanded() for row in self.rows.values())
+        label = "Collapse all" if expanded else "Expand all"
+        self.expansion_button.setIcon(icon("collapse" if expanded else "expand"))
+        self.expansion_button.setAccessibleName(label)
+        self.expansion_button.setToolTip(label)
+        self.expansion_button.setEnabled(bool(self.rows))
 
     def set_all_expanded(self, expanded):
         self.tree.blockSignals(True)
@@ -402,6 +415,7 @@ class Tasks(QWidget):
             row.setExpanded(expanded)
             states[ident] = expanded
         self.tree.blockSignals(False)
+        self.update_expansion_button()
         self.save_view()
 
     def editor_next(self, indent, backwards):
@@ -510,12 +524,6 @@ class Tasks(QWidget):
                 )
                 more.setFixedSize(28, 24)
                 action_layout.addWidget(more)
-                expand = icon_button("expand", "Show full title / collapse title", lambda: None, foreground)
-                expand.setAccessibleName("Expand or collapse full title")
-                expand.setToolTip("Show full title / collapse title")
-                expand.setFixedSize(28, 24)
-                expand.clicked.connect(lambda checked=False, r=row: self.toggle_title(r))
-                action_layout.addWidget(expand)
                 if tint:
                     # Cell widgets otherwise cover the item's category background.
                     actions.setObjectName("taskActions")
@@ -584,6 +592,7 @@ class Tasks(QWidget):
             self.tree.setCurrentItem(self.rows[selected])
         self.tree.blockSignals(False)
         self.building = False
+        self.update_expansion_button()
         self.tree.verticalScrollBar().setValue(scroll)
         self.summary.setText(
             f"{len(direct)} matches · {sum(not i['done'] for i in self.notebook.items)} open · {len(self.notebook.items)} items total"
@@ -765,8 +774,11 @@ class Tasks(QWidget):
         if not row:
             return
         terminal = self.terminals.get(ident)
+        scheduled = self.scheduled_runs.get(ident)
         state = getattr(terminal, "agent_state", None) or (
-            "Terminal running" if terminal and terminal.running else "Ended" if terminal else "Disconnected"
+            "Terminal running" if terminal and terminal.running else "Ended" if terminal else
+            "Scheduled run running" if scheduled and scheduled["status"] == "running" else
+            scheduled["status"].capitalize() if scheduled else "Disconnected"
         )
         message = bool(session.get("reply_unread") or terminal and getattr(terminal, "agent_message", False))
         unread = (
@@ -794,6 +806,8 @@ class Tasks(QWidget):
         labels = []
         if busy:
             labels.append("Agent running")
+        if any(self.scheduled_runs.get(s["id"], {}).get("status") == "running" for s in linked):
+            labels.append("Scheduled run running")
         if message:
             labels.append("New agent message")
         row.setSizeHint(0, QSize(100, max(28, 38 if len(labels) > 1 else 0)))

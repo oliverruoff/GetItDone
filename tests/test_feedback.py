@@ -159,12 +159,13 @@ def test_full_title_expands_and_collapses_in_place(window, qtbot):
     row = window.tasks.rows[item["id"]]
     collapsed = tree.visualItemRect(row).height()
     actions = tree.itemWidget(row, 4)
-    expand = next(
-        b for b in actions.findChildren(QPushButton) if b.accessibleName() == "Expand or collapse full title"
+    assert all(
+        b.accessibleName() != "Expand or collapse full title"
+        for b in actions.findChildren(QPushButton)
     )
-    qtbot.mouseClick(expand, Qt.LeftButton)
+    window.tasks.toggle_title(row)
     qtbot.waitUntil(lambda: tree.visualItemRect(row).height() > collapsed * 2)
-    qtbot.mouseClick(expand, Qt.LeftButton)
+    window.tasks.toggle_title(row)
     qtbot.waitUntil(lambda: tree.visualItemRect(row).height() == collapsed)
     assert not hasattr(window.tasks, "category")
     assert not hasattr(window.tasks, "legend")

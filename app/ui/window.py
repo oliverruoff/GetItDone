@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from app.agents import agents
 from app.agents.replies import snapshots
 from app.agents.sessions import codex_sessions, native_sessions
+from app.executions import execution_records, recover_process_runs
 from app.models import Notebook, now_iso, uid
 from app.notifications import Notifier
 from app.reminders import Reminders
@@ -36,6 +37,7 @@ from app.ui.agent_context import AgentContextPanel
 from app.ui.colors import ColorPalette
 from app.ui.common import DismissibleDialog, Job, TerminalPopout, confirm, error
 from app.ui.dialogs import ReminderDialog, SessionDialog, SettingsDialog
+from app.ui.executions import Executions
 from app.ui.icons import icon, icon_button
 from app.ui.knowledge import Knowledge
 from app.ui.scheduled import Scheduled
@@ -64,6 +66,7 @@ class Window(QMainWindow):
         super().__init__()
         self.store = store
         self.notebook = Notebook(data)
+        recovered_executions = recover_process_runs(self.notebook)
         self.terminals = {}
         self.terminal_popout = None
         self.terminals_maximized = False
@@ -214,6 +217,19 @@ class Window(QMainWindow):
         self.session_tree_refresh.timeout.connect(self.refresh_scheduled_sessions)
         self.scheduler.sessions_changed.connect(lambda: self.session_tree_refresh.start(0))
         self.workspace.addTab(self.scheduled, "Scheduled tasks")
+        self.executions = Executions(self)
+        self.executions.session_open.connect(self.resume_session)
+        self.executions.session_details.connect(self.session_details)
+        self.executions.scheduled_open.connect(self.open_scheduled_execution)
+        self.workspace.addTab(self.executions, "Agent executions")
+        self.execution_indicator = QPushButton("0 agents running")
+        self.execution_indicator.setToolTip("Open all agent executions, including scheduled runs and idle terminals")
+        self.execution_indicator.clicked.connect(lambda: self.workspace.setCurrentWidget(self.executions))
+        self.statusBar().insertPermanentWidget(0, self.execution_indicator)
+        self.scheduler.changed.connect(self.refresh_executions)
+        self.refresh_executions()
+        if recovered_executions:
+            QTimer.singleShot(0, self.flush)
         self.tasks.changed.connect(self.schedule_save)
         self.tasks.new_requested.connect(self.add_item)
         self.tasks.indent_requested.connect(self.indent)
@@ -591,6 +607,7 @@ class Window(QMainWindow):
             if self.launch(session, dialog.command):
                 self.terminals[session["id"]].agent_baselined = True
                 self.notebook.data["sessions"].append(session)
+                self.refresh_executions()
                 QApplication.clipboard().setText(item["text"])
                 self.tasks.rebuild(select=ident)
                 self.select_session(session["id"])
@@ -621,6 +638,13 @@ class Window(QMainWindow):
         terminal.agent_message = False
         terminal.agent_baselined = False
         terminal.last_agent_message = None
+        execution = dict(id=uid(), started_at=now_iso(), finished_at=None, status="running",
+                         resumed=bool(session.get("process_runs")) or session in self.notebook.data["sessions"])
+        session.setdefault("process_runs", []).append(execution)
+        terminal.execution_id = execution["id"]
+        terminal.ended.connect(lambda code: self.finish_execution(session, terminal, execution, code))
+        if not terminal.running:
+            QTimer.singleShot(0, lambda: self.finish_execution(session, terminal, execution, getattr(terminal, "exited", None)))
         self.terminals[ident] = terminal
         terminal.changed.connect(lambda: self.session_changed(ident))
         index = self.tabs.addTab(terminal, f"{session['agent']} · {session['title'][:28]}")
@@ -629,6 +653,8 @@ class Window(QMainWindow):
         self.terminal_panel.show()
         self.vertical.setSizes([530, 280])
         self.visibility()
+        self.schedule_save()
+        self.refresh_executions()
         return True
 
     def open_session(self, ident):
@@ -660,6 +686,11 @@ class Window(QMainWindow):
         if terminal and terminal.running:
             self.open_session(ident)
             return
+        for job in self.scheduler.jobs:
+            for run in job["runs"]:
+                if run.get("session_id") == ident and run["status"] == "running":
+                    self.open_scheduled_execution(job["id"], run["id"])
+                    return
         if not Path(session["workdir"]).is_dir():
             error(self, "This session's working directory is unavailable on this computer. "
                   "Your tasks and saved session link are preserved. You can start a new session locally.")
@@ -745,10 +776,11 @@ class Window(QMainWindow):
     def session_changed(self, ident):
         session = self.session(ident)
         terminal = self.terminals.get(ident)
-        if not terminal:
-            return
         if session:
             self.tasks.update_session(session)
+        self.refresh_executions()
+        if not terminal:
+            return
         index = self.tabs.indexOf(terminal)
         if index >= 0:
             title = f"{session['agent']} · {session['title'][:28]}" if session else "Session · Link removed"
@@ -770,6 +802,7 @@ class Window(QMainWindow):
                 "Stop the running agent and its child processes, and close this tab?",
             ):
                 return
+            terminal.stop_requested = True
             terminal.stop()
             # Keep the tab until termination is confirmed by the backend.
             terminal.ended.connect(lambda code, t=terminal: self.remove_terminal(t))
@@ -789,6 +822,7 @@ class Window(QMainWindow):
         terminal.close()
         terminal.deleteLater()
         self.visibility()
+        self.refresh_executions()
 
     def select_session(self, ident):
         self.selected_session = ident
@@ -944,6 +978,10 @@ class Window(QMainWindow):
                                          timestamp=snapshot.get("timestamp"), saved_at=now_iso())
             session["reply_unread"] = True
             if terminal:
+                execution_id = getattr(terminal, "execution_id", None)
+                for execution in session.get("process_runs", []):
+                    if execution["id"] == execution_id:
+                        execution["last_reply"] = dict(session["last_reply"])
                 terminal.agent_message = True
             self.schedule_save()
             # Historical imports are saved quietly; notify only for an observed new reply.
@@ -1023,8 +1061,47 @@ class Window(QMainWindow):
         else:
             apply(read(), None)
 
+    def refresh_executions(self):
+        if not hasattr(self, "executions"):
+            return
+        records = execution_records(self.notebook, self.terminals)
+        self.executions.refresh(records)
+        self.tasks.scheduled_runs = {
+            run["session_id"]: run for job in self.scheduler.jobs for run in job["runs"] if run.get("session_id")
+        }
+        for session in self.notebook.data["sessions"]:
+            if session["id"] in self.tasks.scheduled_runs:
+                self.tasks.update_session(session)
+        live = [r for r in records if r["active"]]
+        scheduled = sum(r["origin"] == "Scheduled" for r in live)
+        self.execution_indicator.setText(f"{len(live)} running · {scheduled} scheduled" if live else "No agents running")
+        self.workspace.setTabText(self.workspace.indexOf(self.executions),
+                                  f"Agent executions ({len(live)})" if live else "Agent executions")
+        self.workspace.setTabText(self.workspace.indexOf(self.scheduled),
+                                  f"Scheduled tasks ({scheduled})" if scheduled else "Scheduled tasks")
+        self.tray.setToolTip(f"GetItDone · {len(live)} running · {scheduled} scheduled")
+
+    def finish_execution(self, session, terminal, execution, code):
+        if execution["status"] != "running":
+            return
+        status = "stopped" if getattr(terminal, "stop_requested", False) else (
+            "completed" if code == 0 else "interrupted" if code is None else "failed")
+        execution.update(status=status, finished_at=now_iso(), exit_code=code)
+        self.schedule_save()
+        self.refresh_executions()
+
+    def open_scheduled_execution(self, job_id, run_id):
+        for index in range(self.scheduled.jobs.count()):
+            if self.scheduled.jobs.item(index).data(Qt.UserRole) == job_id:
+                self.scheduled.selected_runs[job_id] = run_id
+                self.scheduled.jobs.setCurrentRow(index)
+                self.scheduled.show_job()
+                self.workspace.setCurrentWidget(self.scheduled)
+                return
+
     def tick(self):
         self.scheduler.tick()
+        self.refresh_executions()
         # Discovery reads agent files in a worker so large histories cannot freeze typing.
         if not getattr(self, "id_discovery_tick", 0) % 5:
             self.discover_session_ids(background=True)
@@ -1124,6 +1201,7 @@ class Window(QMainWindow):
         self.setEnabled(False)
         self.statusBar().showMessage("Stopping sessions …")
         for terminal in running:
+            terminal.stop_requested = True
             terminal.stop()
         QTimer.singleShot(1800 if running else 0, self.finish_quit)
 
@@ -1135,6 +1213,11 @@ class Window(QMainWindow):
             return
         from PySide6.QtCore import QCoreApplication
 
+        for session in self.notebook.data["sessions"]:
+            for execution in session.get("process_runs", []):
+                if execution["status"] == "running":
+                    execution.update(status="stopped", finished_at=now_iso())
+        self.flush()
         for terminal in self.terminals.values():
             terminal.close()
             terminal.deleteLater()
