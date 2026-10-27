@@ -9,8 +9,13 @@ from pathlib import Path
 
 def codex_sessions(workdir, started_at=None):
     root = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
-    cwd = str(Path(workdir).resolve())
-    start = datetime.fromisoformat(started_at).timestamp() if started_at else None
+    try:
+        if not Path(workdir).is_dir():
+            return set()
+        cwd = str(Path(workdir).resolve())
+        start = datetime.fromisoformat(started_at).timestamp() if started_at else None
+    except (OSError, ValueError, TypeError, AttributeError, RuntimeError, OverflowError):
+        return set()
     result = set()
 
     def matches(created):
@@ -23,7 +28,7 @@ def codex_sessions(workdir, started_at=None):
                 for ident, created in connection.execute(
                     "SELECT id, created_at FROM threads WHERE cwd = ? AND source = 'cli'", (cwd,)
                 ):
-                    if matches(created):
+                    if isinstance(ident, str) and isinstance(created, (int, float)) and matches(created):
                         result.add(ident)
             finally:
                 connection.close()
@@ -33,15 +38,18 @@ def codex_sessions(workdir, started_at=None):
         try:
             with path.open() as stream:
                 meta = json.loads(stream.readline())
-            payload = meta.get("payload", {})
+            if not isinstance(meta, dict) or not isinstance(meta.get("payload"), dict):
+                continue
+            payload = meta["payload"]
             if (
                 meta.get("type") == "session_meta"
                 and str(Path(payload.get("cwd", "")).resolve()) == cwd
                 and payload.get("source") == "cli"
                 and matches(datetime.fromisoformat(payload["timestamp"].replace("Z", "+00:00")).timestamp())
             ):
-                result.add(payload["id"])
-        except (OSError, ValueError, KeyError, TypeError):
+                if isinstance(payload.get("id"), str):
+                    result.add(payload["id"])
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, RuntimeError, OverflowError):
             continue
     return result
 
@@ -49,8 +57,13 @@ def codex_sessions(workdir, started_at=None):
 def native_sessions(agent, workdir, started_at):
     if agent == "codex":
         return codex_sessions(workdir, started_at)
-    start = datetime.fromisoformat(started_at).timestamp()
-    cwd = Path(workdir).resolve()
+    try:
+        if not Path(workdir).is_dir():
+            return set()
+        start = datetime.fromisoformat(started_at).timestamp()
+        cwd = Path(workdir).resolve()
+    except (OSError, ValueError, TypeError, AttributeError, RuntimeError, OverflowError):
+        return set()
     if agent == "claude":
         root = Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude"))) / "projects"
     elif agent == "pi":
@@ -63,14 +76,16 @@ def native_sessions(agent, workdir, started_at):
             with path.open() as stream:
                 for _, line in zip(range(20), stream):
                     entry = json.loads(line)
+                    if not isinstance(entry, dict):
+                        continue
                     if Path(entry.get("cwd", "")).resolve() != cwd or not entry.get("timestamp"):
                         continue
                     created = datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00")).timestamp()
                     if start - 2 <= created <= start + 120:
                         ident = entry.get("sessionId") if agent == "claude" else entry.get("id")
-                        if ident and (agent == "claude" or entry.get("type") == "session"):
+                        if isinstance(ident, str) and ident and (agent == "claude" or entry.get("type") == "session"):
                             result.add(ident)
                     break
-        except (OSError, ValueError, TypeError):
+        except (OSError, ValueError, TypeError, AttributeError, RuntimeError, OverflowError):
             continue
     return result

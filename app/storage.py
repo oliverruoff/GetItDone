@@ -1,11 +1,11 @@
-"""Validated, atomic storage; damaged or future files must never be overwritten."""
+"""Atomic notebook storage with validated backups and lossless recovery archives."""
 
 import json
 import os
-import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from app.models import empty_data
 
@@ -81,6 +81,15 @@ def validate(data):
             or not isinstance(session.get("native_session_id"), (str, type(None)))
         ):
             fail("Invalid session link.")
+        reply = session.get("last_reply")
+        if reply is not None and (
+            not isinstance(reply, dict)
+            or not isinstance(reply.get("text"), str)
+            or not isinstance(reply.get("saved_at"), str)
+        ):
+            fail("Invalid saved agent reply.")
+        if "reply_unread" in session and type(session["reply_unread"]) is not bool:
+            fail("Invalid agent reply state.")
     settings = data["settings"]
     for key in ("default_workdir", "default_agent", "knowledge_folder", "knowledge_last_file"):
         if key in settings and not isinstance(settings[key], str):
@@ -142,48 +151,133 @@ def validate(data):
     return data
 
 
+def atomic_write(path, raw):
+    """Flush the file before replace and the directory afterwards (POSIX)."""
+    temp = None
+    try:
+        fd, temp = tempfile.mkstemp(prefix=".notebook-", suffix=".tmp", dir=path.parent)
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp, path)
+        temp = None
+        if os.name != "nt":
+            directory = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    finally:
+        if temp:
+            Path(temp).unlink(missing_ok=True)
+
+
+def decode(raw):
+    return validate(json.loads(raw.decode("utf-8-sig")))
+
+
 class Store:
     def __init__(self, folder):
         self.folder = Path(folder)
         self.folder.mkdir(parents=True, exist_ok=True)
         self.path = self.folder / "notebook.json"
         self.backup = self.folder / "notebook.backup.json"
+        self.backups = [self.backup, self.folder / "notebook.backup.2.json",
+                        self.folder / "notebook.backup.3.json"]
         self.writable = False
+        self.expected = None
+        self.recovery_notice = ""
+
+    def current_bytes(self):
+        try:
+            return self.path.read_bytes()
+        except FileNotFoundError:
+            return None
 
     def load(self):
+        self.writable = False
+        self.recovery_notice = ""
         try:
-            data = (
-                validate(json.loads(self.path.read_text(encoding="utf-8")))
-                if self.path.exists()
-                else empty_data()
-            )
+            raw = self.current_bytes()
+            # A future version must never be replaced with an older backup.
+            if raw is not None:
+                try:
+                    version = json.loads(raw.decode("utf-8-sig")).get("schema_version")
+                except (ValueError, AttributeError):
+                    version = None
+                if type(version) is int and version != 1:
+                    raise StorageError("Unknown data version. The file has not been changed.")
+            try:
+                data = decode(raw) if raw is not None else None
+            except (StorageError, ValueError, TypeError, KeyError, RecursionError):
+                data = None
+            if data is None:
+                for candidate in self.backups:
+                    try:
+                        recovered = candidate.read_bytes()
+                        data = decode(recovered)
+                    except (OSError, StorageError, ValueError, TypeError, KeyError, RecursionError):
+                        continue
+                    preserved = None
+                    if raw is not None:
+                        preserved = self.folder / f"notebook.damaged-{uuid4().hex}.json"
+                        atomic_write(preserved, raw)
+                    # Recovery must not overwrite a file changed while reading backups.
+                    if self.current_bytes() != raw:
+                        raise StorageError("The notebook changed during recovery. Please reopen it.")
+                    atomic_write(self.path, recovered)
+                    raw = recovered
+                    self.recovery_notice = (
+                        f"Recovered notebook from {candidate.name}. "
+                        "The most recent changes may be missing. "
+                        + (f"The damaged original is preserved as {preserved.name}." if preserved else
+                           "The main notebook file was missing.")
+                    )
+                    break
+                else:
+                    if raw is not None or any(p.exists() for p in self.backups):
+                        raise StorageError("No valid notebook or backup found. All files have been preserved.")
+                    data = empty_data()
+            self.expected = raw
+            self.writable = True
+            return data
         except (OSError, ValueError, TypeError, KeyError, RecursionError) as exc:
-            raise StorageError(
-                f"Could not load data: {exc}. The original file and backup have been preserved."
-            ) from exc
-        self.writable = True
-        return data
+            raise StorageError(f"Could not load data: {exc}. Original and backups preserved.") from exc
 
     def save(self, data):
         if not self.writable:
             raise StorageError("Saving is blocked because data could not be loaded successfully.")
         validate(data)
-        temp = None
         try:
-            fd, temp = tempfile.mkstemp(prefix=".notebook-", suffix=".tmp", dir=self.folder)
-            with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump(data, stream, ensure_ascii=False, indent=2)
-                stream.flush()
-                os.fsync(stream.fileno())
-            if self.path.exists():
-                validate(json.loads(self.path.read_text(encoding="utf-8")))
-                backup_temp = self.backup.with_suffix(".tmp")
-                shutil.copy2(self.path, backup_temp)
-                os.replace(backup_temp, self.backup)
-            os.replace(temp, self.path)
-            temp = None
+            raw = json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False).encode("utf-8")
+            previous = self.current_bytes()
+            if previous != self.expected:
+                raise StorageError(
+                    "The notebook was changed or deleted outside this app. Saving stopped to protect "
+                    "both versions. Your edits remain in memory; copy the data folder before reopening."
+                )
+            if previous == raw:
+                return
+            # Keep three distinct generations. Never rotate a damaged backup into history.
+            for source, target in reversed(list(zip(self.backups, self.backups[1:]))):
+                if source.exists():
+                    old = source.read_bytes()
+                    try:
+                        decode(old)
+                    except (StorageError, ValueError, TypeError, KeyError, RecursionError):
+                        continue
+                    atomic_write(target, old)
+            atomic_write(self.backup, previous if previous is not None else raw)
+            if self.current_bytes() != previous:
+                raise StorageError("The notebook changed while saving. Saving stopped; edits remain in memory.")
+            try:
+                atomic_write(self.path, raw)
+            except OSError:
+                # A directory fsync can fail after replace: permit a safe retry of our own write.
+                if self.current_bytes() == raw:
+                    self.expected = raw
+                raise
+            self.expected = raw
         except (OSError, ValueError, TypeError, KeyError, RecursionError) as exc:
             raise StorageError(f"Could not save: {exc}") from exc
-        finally:
-            if temp and Path(temp).exists():
-                Path(temp).unlink()

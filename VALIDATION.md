@@ -150,3 +150,22 @@ Abschluss dieses Durchlaufs: **107 Tests bestanden, 1 optionaler Live-Test über
 - Vollständige Qt-Suite mit `QT_QPA_PLATFORM=offscreen`: **108 bestanden, 1 optionaler Live-Test übersprungen**. Nach der letzten Layoutkorrektur zusätzlich **33 betroffene Tests bestanden**. Native Fokusprüfungen waren in dieser Sitzung durch die macOS-Fensteraktivierung unzuverlässig; deshalb wird der vollständige Lauf ausdrücklich als Offscreen-Lauf ausgewiesen.
 - Ruff und Diff-Prüfung erfolgreich. Neues macOS-Bundle gebaut und mit isolierten Daten gestartet: **TERMINAL_SMOKE_OK**, Exit 0, `bundle_current(...) == True`.
 - Sechs Screenshots mit separaten Beispieldaten unter `build/ux-audit/screenshots/` visuell geprüft; Nutzer hat den Stand abgenommen. Keine persönlichen Notizbuchdaten verändert.
+
+## Datensicherheit und übertragene Notebooks – 27.10.2026
+
+- Gesamte Python-Suite: **138 bestanden, 1 übersprungen**; Ruff und `git diff --check` erfolgreich.
+- Übertragenes Notebook mit fremdem Windows-Arbeitsordner, fehlendem Wissensordner und fremder nativer Session-ID öffnet sich; Aufgaben und Notizen lassen sich weiter bearbeiten und speichern, Session-Verknüpfungen bleiben erhalten.
+- Fehlende lokale Agent-Historien, ungültige Zeitstempel und beschädigte Historien-Einträge blockieren das Notebook nicht. Resume meldet einen fehlenden Arbeitsordner, ohne Daten zu entfernen.
+- Erster Save erzeugt Hauptdatei und Backup; unveränderte Saves rotieren keine Backups; drei Vorversionen geprüft.
+- Wiederherstellung bei fehlender Hauptdatei, leerer Datei, defektem JSON, ungültiger Kodierung und ungültiger Struktur; beschädigtes Original bleibt bytegenau separat erhalten. Defekte Backups werden übersprungen. Ohne gültigen Stand kein leerer Ersatz; zukünftige Schemaversionen bleiben unangetastet.
+- Simulierte Schreib-/Flush-/Replace-Fehler sowie Unterbrechungen unmittelbar vor und nach dem Hauptdatei-Replace: vollständiger alter oder neuer Zustand bleibt lesbar. Externe Änderung/Löschung und Änderung während der Backup-Phase blockieren das Überschreiben. Fehlgeschlagene Sicherung des beschädigten Originals blockiert die Wiederherstellung.
+- macOS-App-Bundle neu gebaut; paketierter `--smoke`-Start in isoliertem temporärem Datenordner mit Exit 0, Hauptdatei und Backup vorhanden und danach erneut ladbar.
+- Dies sind Software-Fehlersimulationen auf macOS, keine physische Stromausfall- oder Windows-Abnahme. Backups im selben Ordner ersetzen keine unabhängige Sicherung gegen Datenträgerausfall oder Ordnerlöschung.
+
+### Saved agent replies (2026-10-27)
+
+- Latest assistant text is stored per session in the notebook, including capture time and persistent unread state. Reading it does not launch an agent or require its working folder/history.
+- Codex, Claude and pi history readers require exact native session identity and working directory. OpenCode uses assistant text from its local API. Thinking/tool content is excluded; unavailable sources preserve the saved reply. Local history parsing uses a 2 MiB tail; exceptionally large single messages outside that window may not be captured.
+- Added tests cover exact session matching, Codex completion, Claude/pi text extraction, exclusion of thinking/tool content, save/reload without agent launch, acknowledgement persistence and notification deduplication. Historical first imports are quiet.
+- `QT_QPA_PLATFORM=offscreen .venv/bin/pytest -q --disable-warnings`: **143 passed, 1 skipped**. `ruff check app tests` and `git diff --check` passed. Task controls and saved-reply dialog were rendered and visually inspected with disposable data.
+- No new authenticated live-agent run or native notification delivery test was performed for this change. Explicit permission/question states remain unavailable; no waiting-for-user state is inferred from terminal activity. Packaged installers were not rebuilt.

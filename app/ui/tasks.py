@@ -280,6 +280,7 @@ class Tasks(QWidget):
     escape_pressed = Signal(str)
     changed = Signal()
     selected = Signal(str)
+    session_reply = Signal(str)
     session_resume = Signal(str)
     session_details = Signal(str)
     session_start = Signal()
@@ -323,7 +324,7 @@ class Tasks(QWidget):
         self.tree.setColumnWidth(1, 56)
         self.tree.setColumnWidth(2, 125)
         self.tree.setColumnWidth(3, 100)
-        self.tree.setColumnWidth(4, 155)
+        self.tree.setColumnWidth(4, 185)
         self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tree.header().setStretchLastSection(False)
         self.tree.header().sectionResized.connect(lambda *_: self.tree.scheduleDelayedItemsLayout())
@@ -337,6 +338,7 @@ class Tasks(QWidget):
         self.tree.setDefaultDropAction(Qt.MoveAction)
         self.tree.setDropIndicatorShown(True)
         self.tree.dropped.connect(self.drop_item)
+        self.tree.itemClicked.connect(self.status_clicked)
         delegate = ItemDelegate(self.tree)
         delegate.escape_pressed.connect(self.escape_pressed)
         delegate.next_item.connect(self.editor_next)
@@ -747,6 +749,7 @@ class Tasks(QWidget):
         resume.setAccessibleName("Resume session")
         resume.clicked.connect(lambda checked=False: self.session_resume.emit(ident))
         buttons.addWidget(resume)
+        buttons.addWidget(icon_button("note", "Last reply", lambda checked=False: self.session_reply.emit(ident)))
         buttons.addWidget(
             icon_button("info", "Session details", lambda checked=False: self.session_details.emit(ident))
         )
@@ -765,7 +768,7 @@ class Tasks(QWidget):
         state = getattr(terminal, "agent_state", None) or (
             "Terminal running" if terminal and terminal.running else "Ended" if terminal else "Disconnected"
         )
-        message = bool(terminal and getattr(terminal, "agent_message", False))
+        message = bool(session.get("reply_unread") or terminal and getattr(terminal, "agent_message", False))
         unread = (
             " · New agent message" if message else " · new output" if terminal and terminal.unread else ""
         )
@@ -787,7 +790,7 @@ class Tasks(QWidget):
         linked = [s for s in self.notebook.data["sessions"] if s["item_id"] == item_id]
         terminals = [self.terminals[s["id"]] for s in linked if s["id"] in self.terminals]
         busy = any(getattr(t, "agent_state", None) == "Agent running" for t in terminals)
-        message = any(getattr(t, "agent_message", False) for t in terminals)
+        message = any(s.get("reply_unread") for s in linked) or any(getattr(t, "agent_message", False) for t in terminals)
         labels = []
         if busy:
             labels.append("Agent running")
@@ -812,6 +815,18 @@ class Tasks(QWidget):
         elif row.text(0) != item["text"]:
             self.notebook.update(ident, text=row.text(0))
             self.changed.emit()
+
+    def status_clicked(self, row, column):
+        if column != 3:
+            return
+        ident = row.data(0, ROLE)
+        if row.data(0, ROLE + 1) == "session":
+            self.session_reply.emit(ident)
+        else:
+            linked = [s for s in self.notebook.data["sessions"]
+                      if s["item_id"] == ident and s.get("reply_unread")]
+            if linked:
+                self.session_reply.emit(linked[-1]["id"])
 
     def selection_changed(self, row, previous):
         if row and row.data(0, ROLE + 1) == "session":

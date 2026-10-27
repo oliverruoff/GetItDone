@@ -65,3 +65,25 @@ def test_activity_ignores_split_control_sequences():
     assert not activity.feed("1m\x1b]0;title")
     assert not activity.feed("\x07\r\n")
     assert activity.feed("Hello 世界")
+
+
+@pytest.mark.parametrize("agent", ["codex", "claude", "pi"])
+def test_native_discovery_with_foreign_path_or_invalid_timestamp(tmp_path, agent):
+    from app.agents.sessions import native_sessions
+
+    assert native_sessions(agent, str(tmp_path / "missing"), "2026-10-26T10:00:00Z") == set()
+    assert native_sessions(agent, str(tmp_path), "invalid timestamp") == set()
+
+
+@pytest.mark.parametrize("agent", ["codex", "claude", "pi"])
+def test_malformed_local_histories_are_optional(tmp_path, monkeypatch, agent):
+    from app.agents.sessions import native_sessions
+
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(tmp_path))
+    root = tmp_path / ("projects" if agent == "claude" else "sessions") / "project"
+    root.mkdir(parents=True)
+    for index, content in enumerate(['[]', '{"payload":[]}', '{broken', '{"cwd":42}']):
+        (root / f"bad-{index}.jsonl").write_text(content + "\n")
+    assert native_sessions(agent, str(tmp_path), "2026-10-26T10:00:00Z") == set()

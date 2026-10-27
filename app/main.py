@@ -150,6 +150,10 @@ def main():
         box.setTextFormat(Qt.PlainText)
         box.exec()
         return 1
+    if store.recovery_notice:
+        box = QMessageBox(QMessageBox.Warning, "GetItDone · Notebook recovered", store.recovery_notice)
+        box.setTextFormat(Qt.PlainText)
+        box.exec()
     from app.ui.window import Window
 
     configure_style(app)

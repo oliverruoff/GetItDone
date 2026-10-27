@@ -137,8 +137,9 @@ def test_hierarchy_and_session_actions_are_clear_and_english(notebook):
     tasks.rebuild()
     actions = tasks.tree.itemWidget(tasks.session_rows[session["id"]], 4)
     buttons = actions.findChildren(QPushButton)
-    assert [b.text() for b in buttons] == ["Resume", ""]
-    assert buttons[1].accessibleName() == "Session details"
+    assert [b.text() for b in buttons] == ["Resume", "", ""]
+    assert buttons[1].accessibleName() == "Last reply"
+    assert buttons[2].accessibleName() == "Session details"
     item_buttons = tasks.tree.itemWidget(tasks.rows[root["id"]], 4).findChildren(QPushButton)
     assert all(not button.text() and button.toolTip() and button.accessibleName() for button in item_buttons)
     assert window.workspace.tabText(0) == "Tasks" and window.workspace.tabText(1) == "Knowledge"

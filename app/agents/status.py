@@ -5,6 +5,7 @@ import os
 import subprocess
 
 from app.agents.base import executable_path
+from app.agents.replies import text_content
 
 
 def opencode_snapshot(session_ids):
@@ -44,6 +45,8 @@ def opencode_snapshot(session_ids):
             idle = next((m for m in messages if m.get("type") == "idle"), None)
             snapshots[session_id] = {
                 "busy": session_id in active,
+                "output": text_content(assistant.get("content")) if assistant else "",
+                "timestamp": str(assistant.get("time", {}).get("completed", "")) if assistant else "",
                 "message": assistant["id"] if assistant else None,
                 "failed": bool(idle and idle.get("outcome") not in (None, "succeeded")),
             }

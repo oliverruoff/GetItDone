@@ -58,11 +58,13 @@ def test_atomic_persistence_backup_and_corruption(tmp_path):
     assert len(Store(tmp_path).load()["items"]) == 2
     store.path.write_text("{broken")
     damaged = store.path.read_bytes()
+    recovered = Store(tmp_path)
+    assert len(recovered.load()["items"]) == 1
+    assert recovered.recovery_notice
+    assert next(tmp_path.glob("notebook.damaged-*.json")).read_bytes() == damaged
     with pytest.raises(StorageError):
-        Store(tmp_path).load()
-    with pytest.raises(StorageError):
-        store.save(book.data)
-    assert store.path.read_bytes() == damaged
+        store.save(book.data)  # The old writer must not overwrite the recovered notebook.
+    assert store.path.read_bytes() == original
     assert store.backup.read_bytes() == original
 
 

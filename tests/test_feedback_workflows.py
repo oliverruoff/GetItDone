@@ -208,3 +208,27 @@ def test_schedule_crud_run_inbox_and_navigation(window, qtbot, monkeypatch):
     panel.delete()
     assert not window.scheduler.jobs and panel.runs.count() == 0
     assert Store(window.store.folder).load()["sessions"]  # Deleting a job preserves session links.
+
+
+def test_foreign_sessions_do_not_block_tasks_or_saving(window, monkeypatch, tmp_path):
+    from app.models import uid
+
+    sessions = window.notebook.data["sessions"]
+    for agent in ("codex", "claude", "pi", "missing-profile"):
+        sessions.append(dict(id=uid(), item_id=window.notebook.items[0]["id"], agent=agent,
+                             workdir=str(tmp_path / "other-computer"), title="Foreign session",
+                             native_session_id=None, created_at="invalid old timestamp"))
+
+    def unavailable(*args):
+        raise OSError("Local agent history is unavailable")
+
+    monkeypatch.setattr("app.ui.window.native_sessions", unavailable)
+    window.discover_session_ids()
+    window.tasks.rebuild()
+    assert window.flush()
+    assert Store(window.store.folder).load()["sessions"] == sessions
+    messages = []
+    monkeypatch.setattr("app.ui.window.error", lambda parent, message: messages.append(str(message)))
+    window.resume_session(sessions[0]["id"])
+    assert "unavailable" in messages[0]
+    assert len(window.notebook.items) == 3

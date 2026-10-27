@@ -408,3 +408,35 @@ def test_task_drop_reorders_nests_and_emits_save(qtbot):
     tasks.drop_item(b["id"], child["id"], None)
     assert b["parent_id"] is None
     assert len(changes) == 2
+
+
+def test_transferred_notebook_opens_without_agent_histories(qtbot, tmp_path, monkeypatch):
+    from app.models import uid
+
+    store = Store(tmp_path)
+    book = Notebook(store.load())
+    item = book.add("Portable task")
+    book.update(item["id"], notes="Portable notes")
+    book.data["sessions"].append(dict(
+        id=uid(), item_id=item["id"], agent="codex", native_session_id="foreign-id",
+        workdir="Z:\\old-computer\\project", title="Foreign session", created_at="old metadata",
+    ))
+    book.data["settings"]["knowledge_folder"] = str(tmp_path / "missing-knowledge")
+    store.save(book.data)
+    reopened = Store(tmp_path)
+    window = Window(reopened, reopened.load())
+    qtbot.addWidget(window)
+    try:
+        window.show()
+        assert item["id"] in window.tasks.rows
+        window.notebook.update(item["id"], notes="Edited locally")
+        assert window.flush()
+        assert Store(tmp_path).load()["items"][0]["notes"] == "Edited locally"
+        assert Store(tmp_path).load()["sessions"] == book.data["sessions"]
+    finally:
+        window.timer.stop()
+        window.scheduler.shutdown()
+        window.saver.stop()
+        window.tray.hide()
+        window.quitting = True
+        window.close()

@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
 )
 
 from app.agents import agents
+from app.agents.replies import snapshots
 from app.agents.sessions import codex_sessions, native_sessions
-from app.agents.status import opencode_snapshot
 from app.models import Notebook, now_iso, uid
 from app.notifications import Notifier
 from app.reminders import Reminders
@@ -68,6 +68,7 @@ class Window(QMainWindow):
         self.terminal_popout = None
         self.terminals_maximized = False
         self.status_polling = False
+        self.reply_baselined = set()
         self.context_generation = 0
         self.selected_session = None
         self.quitting = False
@@ -223,6 +224,7 @@ class Window(QMainWindow):
         self.tasks.undo_expired.connect(self.expire_undo)
         self.tasks.session_start.connect(self.start_session)
         self.tasks.session_resume.connect(self.resume_session)
+        self.tasks.session_reply.connect(self.show_last_reply)
         self.tasks.session_details.connect(self.session_details)
         self.tasks.selected.connect(self.select_session)
         self.timer = QTimer(self)
@@ -658,6 +660,10 @@ class Window(QMainWindow):
         if terminal and terminal.running:
             self.open_session(ident)
             return
+        if not Path(session["workdir"]).is_dir():
+            error(self, "This session's working directory is unavailable on this computer. "
+                  "Your tasks and saved session link are preserved. You can start a new session locally.")
+            return
         registry = agents(self.notebook.data["settings"])
         agent = registry.get(session["agent"])
         if not agent or not agent.resume_args:
@@ -890,47 +896,78 @@ class Window(QMainWindow):
         if terminal:
             terminal.input("\x03")
 
+    def show_last_reply(self, ident):
+        session = self.session(ident)
+        if not session:
+            return
+        session["reply_unread"] = False
+        terminal = self.terminals.get(ident)
+        if terminal:
+            terminal.agent_message = False
+        self.tasks.update_session(session)
+        self.schedule_save()
+        dialog = DismissibleDialog(self)
+        dialog.setWindowTitle("Last reply · " + session["title"])
+        dialog.resize(760, 560)
+        layout = QVBoxLayout(dialog)
+        reply = session.get("last_reply") or {}
+        saved_at = reply.get("saved_at") or "No saved reply"
+        try:
+            saved_at = datetime.fromisoformat(saved_at).astimezone().strftime("%d.%m.%Y %H:%M")
+        except ValueError:
+            pass
+        layout.addWidget(QLabel(session["agent"] + " · " + saved_at))
+        editor = QPlainTextEdit()
+        editor.setReadOnly(True)
+        editor.setPlainText(reply.get("text") or "No assistant reply has been captured for this session yet.")
+        layout.addWidget(editor)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec()
+
+    def apply_agent_snapshot(self, ident, snapshot):
+        session = self.session(ident)
+        if not session or not snapshot:
+            return
+        terminal = self.terminals.get(ident)
+        if terminal and snapshot.get("status_known", True):
+            terminal.agent_state = (
+                "Agent running" if snapshot["busy"] else "Agent error" if snapshot["failed"] else "Ready"
+            )
+        observed = ident in self.reply_baselined
+        self.reply_baselined.add(ident)
+        output = snapshot.get("output")
+        previous = session.get("last_reply") or {}
+        if output and (output != previous.get("text") or snapshot.get("message") != previous.get("message")):
+            session["last_reply"] = dict(text=output, message=snapshot.get("message"),
+                                         timestamp=snapshot.get("timestamp"), saved_at=now_iso())
+            session["reply_unread"] = True
+            if terminal:
+                terminal.agent_message = True
+            self.schedule_save()
+            # Historical imports are saved quietly; notify only for an observed new reply.
+            if (previous or observed or terminal and terminal.agent_baselined) and not self.isActiveWindow():
+                self.flush()
+                self.notifier.send({"id": "agent:" + ident, "text": "New agent reply · " + session["title"],
+                                    "notification_title": "GetItDone · Agent"})
+        self.session_changed(ident)
+
     def poll_agent_status(self):
         if self.status_polling or self.quitting:
             return
-        tracked = {
-            s["native_session_id"]: (s["id"], self.terminals[s["id"]])
-            for s in self.notebook.data["sessions"]
-            if s["agent"] == "opencode" and s.get("native_session_id") and s["id"] in self.terminals
-        }
+        tracked = [dict(s) for s in self.notebook.data["sessions"] if s.get("native_session_id")]
         if not tracked:
             return
         self.status_polling = True
 
         def loaded(result, exc):
             self.status_polling = False
-            if self.quitting:
-                return
-            for native_id, (ident, terminal) in tracked.items():
-                if self.terminals.get(ident) is not terminal:
-                    continue
-                snapshot = result.get(native_id) if result else None
-                if exc or snapshot is None:
-                    terminal.agent_state = "Status unknown"
-                else:
-                    terminal.agent_state = (
-                        "Agent running"
-                        if snapshot["busy"]
-                        else "Agent error"
-                        if snapshot["failed"]
-                        else "Ready"
-                    )
-                    message = snapshot["message"]
-                    if not snapshot["busy"]:
-                        if terminal.agent_baselined and message and message != terminal.last_agent_message:
-                            terminal.agent_message = True
-                        terminal.last_agent_message = message
-                    elif not terminal.agent_baselined:
-                        terminal.last_agent_message = message
-                    terminal.agent_baselined = True
-                self.session_changed(ident)
+            if not self.quitting and result:
+                for ident, snapshot in result.items():
+                    self.apply_agent_snapshot(ident, snapshot)
 
-        Job(lambda: opencode_snapshot(list(tracked)), loaded, self)
+        Job(lambda: snapshots(tracked), loaded, self)
 
     def discover_session_ids(self, background=False):
         pending = [
@@ -945,10 +982,17 @@ class Window(QMainWindow):
         }
 
         def read():
-            return {
-                s["id"]: native_sessions(s["agent"], s["workdir"], s["created_at"]) - baselines[s["id"]]
-                for s in pending
-            }
+            result = {}
+            for session in pending:
+                try:
+                    candidates = native_sessions(
+                        session["agent"], session["workdir"], session["created_at"]
+                    )
+                except (OSError, ValueError, TypeError, KeyError, RuntimeError, OverflowError):
+                    # Native histories are optional local resources, never notebook dependencies.
+                    candidates = set()
+                result[session["id"]] = candidates - baselines[session["id"]]
+            return result
 
         def apply(result, exc):
             self.discovering_ids = False
@@ -1008,6 +1052,10 @@ class Window(QMainWindow):
         self.statusBar().showMessage(self.notifier.status, 20000)
 
     def open_reminder(self, ident):
+        if ident.startswith("agent:"):
+            self.restore()
+            self.show_last_reply(ident[6:])
+            return
         self.restore()
         self.workspace.setCurrentIndex(0)
         self.tasks.search.clear()

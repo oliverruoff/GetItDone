@@ -153,7 +153,7 @@ class Notifier(QObject):
                     self.native_result.emit(item["id"], False, message)
                     return
                 content = UN.UNMutableNotificationContent.alloc().init()
-                content.setTitle_("GetItDone · Reminder")
+                content.setTitle_(item.get("notification_title", "GetItDone · Reminder"))
                 content.setBody_(item["text"])
                 content.setUserInfo_({"item_id": item["id"]})
                 content.setSound_(UN.UNNotificationSound.defaultSound())
@@ -174,5 +174,5 @@ class Notifier(QObject):
             self.status_changed.emit(self.status)
             self.native_result.emit(item["id"], False, self.status)
         else:
-            self.tray.showMessage("GetItDone · Reminder", item["text"], QSystemTrayIcon.Information, 10000)
+            self.tray.showMessage(item.get("notification_title", "GetItDone · Reminder"), item["text"], QSystemTrayIcon.Information, 10000)
             self.native_result.emit(item["id"], True, "Submitted to the system notification area.")

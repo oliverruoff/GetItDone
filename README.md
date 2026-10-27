@@ -110,7 +110,9 @@ You can use **OpenCode, Codex, Claude Code, or pi** in integrated terminals. Ins
 3. Confirm with **New session**.
 4. The task text is copied to your clipboard. Paste it into the terminal and submit it yourself.
 
-The linked session appears below the task. **Resume** opens its running terminal or resumes the saved session when its session ID is available. The info icon opens details such as the working folder and session ID. If an older session has no ID, it can only be resumed once the ID has been found or entered in its details.
+The linked session appears below the task. **Resume** opens its running terminal or resumes the saved session when its session ID is available. The note icon (**Last reply**) opens the latest captured assistant text directly from the notebook, without starting the agent. Replies and their unread state survive app restarts; a later reply replaces the previous one. Click **New agent message** in the status column to read it. New replies observed while the app is inactive can send a system notification. Initial history imports are quiet. Codex, Claude and pi replies are read from exact local session histories; OpenCode uses its local API. Custom profiles have no automatic reply capture. Missing histories or unavailable APIs preserve the previously saved reply.
+
+The info icon opens details such as the working folder and session ID. If an older session has no ID, it can only be resumed once the ID has been found or entered in its details.
 
 ![Tasks above an integrated terminal, with copy, paste, maximize, and pop-out controls](docs/images/terminals.png)
 
@@ -158,7 +160,13 @@ Schedules run while GetItDone is open, including when hidden in the menu bar or 
 
 Tasks, task notes, colors, reminders, and session links are stored locally. **Settings** shows the exact storage location. Knowledge files remain separate in the folder you selected. There is no automatic synchronization between computers.
 
-To make a backup, quit the app and back up both the data folder shown in **Settings** and your knowledge folder. Alongside `notebook.json`, you will find `notebook.backup.json`, containing the previous valid saved state. If a save error appears at the bottom of the window, resolve it before relying on the saved data.
+Every save writes and flushes a temporary file before atomically replacing `notebook.json`. The app keeps up to three backup generations alongside it: `notebook.backup.json`, `notebook.backup.2.json`, and `notebook.backup.3.json`. The first save also creates a backup; unchanged saves do not rotate history. On macOS/Linux the containing directory is flushed too.
+
+If the main file is missing or damaged, the app recovers the newest valid backup and displays a warning: changes after that backup may be missing. A damaged original is preserved as `notebook.damaged-<unique-id>.json`. If no valid backup exists, opening stops without creating an empty replacement. Files from an unsupported notebook version are preserved without automatic downgrade. If another program changes or deletes the notebook while it is open, saving stops and your edits remain in memory; preserve the data folder before reopening.
+
+To transfer a notebook, quit the app on both computers and copy the data folder. Saved agent links do not require the original agent installations or histories to open the notebook. Resume still needs the matching native history, agent, and working directory on that computer; you can create new sessions locally. Knowledge files remain separate and must be copied too.
+
+For an independent backup, quit the app and back up both the data folder shown in **Settings** and your knowledge folder to another disk or backup service. Adjacent backups protect against interrupted saves and individual damaged files, but cannot protect against disk failure or deletion of the entire folder. If a save error appears at the bottom of the window, resolve it before relying on the saved data.
 
 ## Troubleshooting
 
