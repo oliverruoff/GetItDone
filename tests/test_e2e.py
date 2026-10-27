@@ -30,7 +30,7 @@ def workflow(qtbot, tmp_path):
     configure_style(QApplication.instance())
     store = Store(tmp_path)
     book = Notebook(store.load())
-    category = {"id": uid(), "name": "Project work", "color": "#3d9e50"}
+    category = {"id": uid(), "name": "Project work", "color": "#d1ead3"}
     book.data["categories"].append(category)
     book.data["settings"]["default_workdir"] = str(tmp_path)
     window = Window(store, book.data)
@@ -139,7 +139,10 @@ def test_live_opencode_prompt_busy_response_and_acknowledge(qtbot, workflow):
     dialog_errors = []
 
     def start_dialog():
-        dialog = QApplication.activeModalWidget()
+        dialog = next(
+            (w for w in QApplication.topLevelWidgets() if isinstance(w, SessionDialog) and w.isVisible()),
+            None,
+        )
         if not isinstance(dialog, SessionDialog):
             QTimer.singleShot(50, start_dialog)
             return

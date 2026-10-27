@@ -141,3 +141,27 @@ def test_write_failure_preserves_original(tmp_path, monkeypatch):
         store.save(book.data)
     assert store.path.read_bytes() == original
     assert not list(tmp_path.glob(".notebook-*.tmp"))
+
+
+def test_drag_relocation_preserves_subtree_rejects_cycles_and_roundtrips(tmp_path):
+    book = Notebook()
+    a = book.add("A")
+    b = book.add("B")
+    child = book.add("Child", parent=a["id"])
+    grandchild = book.add("Grandchild", parent=child["id"])
+    book.complete(b["id"], True)
+    assert not book.relocate(a["id"], grandchild["id"])
+    assert not book.relocate(a["id"], None, "missing")
+    assert book.relocate(a["id"], b["id"])
+    assert not b["done"]
+    assert child["parent_id"] == a["id"]
+    assert grandchild["parent_id"] == child["id"]
+    assert book.relocate(child["id"], None, b["id"])
+    assert book.children(None) == [child, b]
+    assert [i["position"] for i in book.children(None)] == [0, 1]
+    store = Store(tmp_path)
+    store.load()
+    store.save(book.data)
+    restored = Notebook(store.load())
+    assert [i["id"] for i in restored.children(None)] == [child["id"], b["id"]]
+    assert restored.get(grandchild["id"])["parent_id"] == child["id"]

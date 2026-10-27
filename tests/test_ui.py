@@ -1,5 +1,6 @@
 import sys
 
+import pytest
 from PySide6.QtPdf import QPdfDocument
 
 from app.models import Notebook
@@ -18,7 +19,7 @@ def test_window_roundtrip_and_visible_hierarchy(qtbot, tmp_path):
     window = Window(store, book.data)
     qtbot.addWidget(window)
     window.show()
-    assert window.tasks.tree.topLevelItemCount() == 2
+    assert window.tasks.tree.topLevelItemCount() == 1
     window.tasks.search.setText("Unicode")
     assert set(window.tasks.rows) == {a["id"], b["id"]}
     assert window.flush()
@@ -106,6 +107,12 @@ def test_tray_visibility_keeps_process_and_marks_hidden_output(qtbot, tmp_path):
         session, [sys.executable, "-u", "-c", "import time; time.sleep(.5); print('hidden'); time.sleep(10)"]
     )
     terminal = window.terminals["s"]
+    window.toggle_terminal_popout()
+    assert terminal.running
+    assert terminal.window() is window.terminal_popout
+    window.terminal_popout.close()
+    assert window.tabs.currentWidget() is terminal
+    assert terminal.running
     window.hide()
     assert terminal.running
     assert not terminal.seen
@@ -267,14 +274,17 @@ def test_inline_actions_and_append_always_create_root_at_end(qtbot, tmp_path, mo
     qtbot.mouseClick(tasks.add_button, Qt.LeftButton)
     assert len(book.items) == 3
     assert window.notebook.items[-1]["parent_id"] is None
-    assert tasks.tree.topLevelItem(tasks.tree.topLevelItemCount() - 1).data(0, Qt.UserRole + 1) == "add"
+    assert tasks.add_button.parent() is tasks
+    assert tasks.add_button.width() == tasks.tree.width()
+    assert tasks.add_button.x() == tasks.tree.x()
     window.timer.stop()
     window.saver.stop()
     window.tray.hide()
     window.quitting = True
 
 
-def test_resume_without_open_terminal_opens_exact_session_immediately(qtbot, tmp_path, monkeypatch):
+@pytest.mark.parametrize("agent_id", ["codex", "opencode"])
+def test_resume_without_open_terminal_opens_exact_session_immediately(qtbot, tmp_path, monkeypatch, agent_id):
     from uuid import uuid4
 
     from app.agents.base import Agent
@@ -287,7 +297,7 @@ def test_resume_without_open_terminal_opens_exact_session_immediately(qtbot, tmp
     session = dict(
         id=uid(),
         item_id=item["id"],
-        agent="codex",
+        agent=agent_id,
         title="Saved session",
         workdir=str(tmp_path),
         native_session_id=native_id,
@@ -301,13 +311,13 @@ def test_resume_without_open_terminal_opens_exact_session_immediately(qtbot, tmp
     window.terminal_panel.hide()
     # Use a local interactive process so this test needs no installed/authenticated CLI.
     adapter = Agent(
-        "codex",
-        "Codex",
+        agent_id,
+        agent_id,
         sys.executable,
         args=("-u", "-c", "import sys; print('SESSION:'+sys.argv[1], flush=True); input()"),
         resume_args=("{id}",),
     )
-    monkeypatch.setattr("app.ui.window.agents", lambda settings: {"codex": adapter})
+    monkeypatch.setattr("app.ui.window.agents", lambda settings: {agent_id: adapter})
     monkeypatch.setattr(window, "refresh_context", lambda: None)
 
     def unexpected_dialog(*args):
@@ -315,6 +325,15 @@ def test_resume_without_open_terminal_opens_exact_session_immediately(qtbot, tmp
 
     monkeypatch.setattr("app.ui.window.confirm", unexpected_dialog)
     monkeypatch.setattr(window, "session_details", unexpected_dialog)
+    from PySide6.QtCore import QTimer
+
+    from app.ui.dialogs import ReminderDialog
+
+    # A previously opened editor must not leave a global filter behind when
+    # WebEngine creates/focuses its private Qt Quick widgets during Resume.
+    reminder = ReminderDialog(item, window)
+    QTimer.singleShot(0, reminder.reject)
+    reminder.exec()
     window.resume_session(session["id"])
     terminal = window.terminals[session["id"]]
     output = []
@@ -337,3 +356,55 @@ def test_resume_without_open_terminal_opens_exact_session_immediately(qtbot, tmp
         window.saver.stop()
         window.tray.hide()
         window.quitting = True
+
+
+def test_task_drop_reorders_nests_and_emits_save(qtbot):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtWidgets import QAbstractItemView
+
+    from app.ui.tasks import Tasks
+
+    book = Notebook()
+    a = book.add("A")
+    child = book.add("Child", parent=a["id"])
+    b = book.add("B")
+    tasks = Tasks(book, {})
+    qtbot.addWidget(tasks)
+    tasks.resize(1000, 500)
+    tasks.show()
+    changes = []
+    tasks.changed.connect(lambda: changes.append(True))
+
+    class Drop:
+        accepted = False
+
+        def source(self):
+            return tasks.tree
+
+        def position(self):
+            return QPointF(tasks.tree.visualItemRect(tasks.rows[b["id"]]).center())
+
+        def setDropAction(self, action):
+            pass
+
+        def accept(self):
+            self.accepted = True
+
+        def ignore(self):
+            self.accepted = False
+
+    tasks.tree.setCurrentItem(tasks.rows[a["id"]])
+    tasks.tree.dropIndicatorPosition = lambda: QAbstractItemView.AboveItem
+    drop = Drop()
+    tasks.tree.dropEvent(drop)
+    assert drop.accepted and changes == [True]
+    tasks.tree.setCurrentItem(tasks.rows[a["id"]])
+    tasks.tree.dropIndicatorPosition = lambda: QAbstractItemView.OnItem
+    tasks.tree.dropEvent(drop)
+    assert a["parent_id"] == b["id"]
+    assert child["parent_id"] == a["id"]
+    assert len(changes) == 2
+    tasks.tree.setCurrentItem(tasks.rows[b["id"]])
+    tasks.drop_item(b["id"], child["id"], None)
+    assert b["parent_id"] is None
+    assert len(changes) == 2

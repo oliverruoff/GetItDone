@@ -1,104 +1,164 @@
-# GetItDone — personal work notebook
+# GetItDone
 
-A local desktop app for Windows and macOS: tasks, child items, notes, row colors, one-time reminders and embedded coding-agent terminals. **Knowledge** reads normal files from a local folder and creates/edits real TXT files. No server, account or synchronization.
+**Aufgaben ordnen, Gedanken festhalten und Coding-Agenten direkt an der passenden Aufgabe öffnen.**
 
-## Start
+GetItDone ist dein lokales Arbeitsnotizbuch für macOS und Windows. Du kannst Aufgaben in Unterpunkte aufteilen, Notizen und Erinnerungen ergänzen und Dokumente daneben lesen. Deine Aufgaben und Wissensdateien bleiben auf deinem Rechner. Für das Notizbuch brauchst du kein Konto; angebundene Coding-Agenten benötigen ihre eigene Installation und Anmeldung.
 
-On this Mac, double-click **`run.command`** in the project folder to run the current app build. If the source changed, the launcher rebuilds the app automatically before opening it. On macOS this uses the real application bundle so system notifications have the correct app identity. The launcher saves and replaces the running instance through its normal shutdown flow. If sessions are running, the app asks before stopping them. File conflicts and cancelled shutdowns preserve the existing instance.
+![Aufgaben mit Unterpunkten, Notizen, Pastellfarben und dem breiten Add-Item-Button](docs/images/tasks.png)
 
-The packaged build is **`dist/GetItDone.app`**; drag it to Applications if desired:
+Die Screenshots zeigen die macOS-Oberfläche mit Beispieldaten. Die Beschriftungen im Programm sind auf Englisch; diese Anleitung erklärt die Bedienung auf Deutsch.
 
-```sh
-open /Users/oliverruoff/Documents/develop/GetItDone/dist/GetItDone.app
-```
+## Starten und loslegen
 
-The launcher automatically rebuilds stale packaged versions. A manual packaged build is also available below. Both source and packaged launches show the loaded revision in the window title (`--version` also prints it). A second launch of the same revision activates the existing window. A running packaged app checks for a replaced build when activated again.
+Öffne **GetItDone**. Unter macOS kannst du die App in den Programme-Ordner ziehen und von dort starten. Unter Windows startest du sie nach der Installation über das Startmenü. Wenn du das Projekt bereits lokal eingerichtet hast, startet ein Doppelklick auf **run.command** auf dem Mac die aktuelle Version.
 
-Source setup (Python 3.11+, recommended 3.12+):
+Installationsdateien erfolgreicher Builds findest du in den Artefakten der [GitHub Actions](https://github.com/oliverruoff/GetItDone/actions/workflows/build.yml). Öffne einen erfolgreichen Lauf für dein Betriebssystem und lade das passende Artefakt herunter; dafür kann eine GitHub-Anmeldung nötig sein. Hinweise zur Einrichtung aus dem Quellcode stehen in der [technischen Anleitung](docs/DEVELOPMENT.md).
 
-```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[dev]'
-.venv/bin/python -m app
-```
+Für den ersten Einstieg:
 
-Windows PowerShell:
+1. Klicke im Reiter **Tasks** unten auf **+ Add item**.
+2. Gib eine Aufgabe ein. Mit **Enter** legst du direkt die nächste Aufgabe auf derselben Ebene an.
+3. Öffne an einer Aufgabe **… → + Add child item**, um sie in kleinere Schritte aufzuteilen.
+4. Ergänze bei Bedarf eine Notiz, eine Farbe oder eine Erinnerung.
+5. Setze das Häkchen, sobald die Aufgabe erledigt ist.
 
-```powershell
-py -3.12 -m venv .venv
-.venv\Scripts\python -m pip install -e ".[dev]"
-.venv\Scripts\python -m app
-```
+Änderungen werden automatisch gespeichert. Unten zeigt **All changes saved**, dass der aktuelle Stand gespeichert wurde.
 
-Windows requires Windows 10 1809+ or Windows 11 for ConPTY. The local macOS build targets Apple Silicon. Install and authenticate agent CLIs separately. Finder-launched Node CLIs also need their Node runtime on PATH.
+## Aufgaben bearbeiten und sortieren
 
-Use `--data-dir /tmp/getitdone-test` for an isolated test notebook.
+Ein **Doppelklick auf den Text** öffnet die Bearbeitung direkt in der Zeile. Alternativ klickst du die Aufgabe an und drückst **F2**. Bei langen Titeln zeigt das Symbol mit den senkrechten Pfeilen den vollständigen Text; aufgeklappte Titel lassen sich mehrzeilig bearbeiten.
 
-## Tasks
+Zum Verschieben ziehst du eine Aufgabe mit gedrückter Maustaste an ihre neue Position:
 
-- **+ Add item** creates a top-level item. Enter adds a sibling; Tab / Shift+Tab indents/outdents outside multiline notes. Double-click or F2 edits text in place. The expand icon shows the full wrapped title; expanded titles use a multiline editor. HTTP(S) URLs and Markdown links in titles open in the default browser. Task notes span the full row. Their trash icon deletes without confirmation and offers a separate Undo notice. A single click only selects; it does not enter editing. Row icons provide **Edit note**, **New session** and **More actions**; their tooltips and accessible names explain each action.
-- Main items have bold headings, separators and group rails. Child items use deeper indentation, connectors and neutral background levels. Notes and sessions stay directly below their item.
-- Click **Color** to open a 4×4 palette of 16 distinct colors. Click a swatch to apply it immediately to the **entire task row**. **No color** clears it. Text and icons switch contrast automatically. Children keep their own color choices. Existing categories are preserved and reused by color; optional naming/custom categories remain in Settings. There is no color filter or color legend; assigning a row color never hides tasks.
-- Check a box to complete only that item. Completing a parent completes all descendants. Undo restores the exact previous mix of open/completed states, without reverting unrelated edits. Reopening a child also reopens its ancestors. Completed rows slide out of the open view and offer **Undo** for five seconds. The Completed / All filters show them again.
-- Click the bell in **Reminder**, choose a date/time and click **Save**. No enable checkbox is required. The cell shows the saved local time immediately. **Remove reminder** explicitly clears it. Each scheduled time fires at most once while the app runs. Completed items do not notify. Reminders missed while the app was fully closed are only marked overdue on restart.
-- **New session** at the task creates an agent session in the selected working directory. Only the item's text is copied. Paste and submit it yourself in the integrated terminal.
-- A session row has **Resume** and a details icon. Resume focuses its live terminal or starts a new process with its exact saved native session ID, without an extra confirmation. A new session is created at the task, not from the session row. Details expose the working directory, label and native ID.
-- OpenCode v2 sessions created by the app get an explicit native ID; its local API reports agent activity and new replies. Claude and pi receive a fixed UUID at launch. Codex IDs are read from its local CLI session index or metadata. Missing older Claude/pi IDs can also be recovered from local session headers. Recovery requires a unique match for working directory and creation time (within two minutes); ambiguous matches remain available for manual entry in Details. **Running terminal** describes process state; agent activity is reported separately when available.
-- Select a session to inspect discovered instructions, MCP configurations and skills. **Discovered / Configured** never imply **Loaded / Active**. Configuration values and secrets are not displayed.
+- **Zwischen zwei Zeilen ablegen:** Die Aufgabe wird dort einsortiert. Die Einfügemarkierung zeigt die Position.
+- **Auf einer anderen Aufgabe ablegen:** Die gezogene Aufgabe wird deren Unterpunkt.
+- **Unter die letzte Aufgabe in den freien Listenbereich ziehen:** Die Aufgabe wird ans Ende der obersten Ebene verschoben.
 
-## Knowledge
+Vorhandene Unterpunkte wandern mit. Du kannst auch **… → Indent / Outdent** verwenden oder die Reihenfolge mit **Move up / Move down** ändern. Ein Klick auf das kleine Dreieck links klappt eine Gruppe ein oder aus. Ein einzelner Klick auf eine Zeile legt den Bezug für Tastaturaktionen fest, ohne eine zusätzliche Umrandung zu zeichnen.
 
-Choose a local folder, then select a document. TXT is editable; Markdown, Word and PDF have integrated read-only views. **New note** creates `<Title>.txt` as a real UTF-8 file. TXT auto-saves after a short typing pause and when leaving the document. If the file changed externally, saving stops and your text stays in the editor. **Save as new note** preserves both versions; **Refresh** can reload the external version after explicitly discarding local edits.
+Über das Suchfeld findest du Aufgaben auch anhand ihrer Notizen. Rechts daneben wechselst du zwischen **Open** (offen), **Completed** (erledigt) und **All** (alle). Übergeordnete Aufgaben können als Kontext eines Suchtreffers sichtbar bleiben.
 
-Only files directly in the folder are listed. Supported: TXT, MD/MARKDOWN, DOCX and PDF; older DOC files display an explicit external-open notice. File names are the titles. Existing user text, document names and custom category names are not translated.
+### Die Symbole an einer Aufgabe
 
-## Closing and notifications
+Die Bedeutung eines Symbols erscheint auch, wenn du den Mauszeiger kurz darauf stehen lässt.
 
-Closing the window hides it in the system tray / menu bar, leaving sessions and reminders running. **File → Quit** exits completely and asks before ending running sessions. If no tray is available, the window stays minimized. **View** hides/shows the terminal panel. Agent context has its own top-level tab beside Tasks and Knowledge.
+| Bedienelement | Was du damit machst |
+| --- | --- |
+| Häkchen links | Aufgabe erledigen oder wieder öffnen |
+| **+ / Farbpunkt** in der Spalte **Color** | Zeilenfarbe wählen oder entfernen |
+| Glocke unter **Reminder** | Erinnerung anlegen, ändern oder entfernen |
+| Notizsymbol rechts | Notiz direkt unter der Aufgabe öffnen und bearbeiten |
+| Terminalsymbol rechts | Neue Coding-Agent-Sitzung für diese Aufgabe anlegen |
+| **…** | Weitere Aktionen, etwa Unterpunkt anlegen oder Aufgabe löschen |
+| Senkrechte Pfeile rechts | Langen Aufgabentext vollständig anzeigen oder wieder verkürzen |
 
-**Help → Test notification** checks native delivery. Permission status is visible in the status bar and Settings. The macOS launcher uses the real app bundle and UserNotifications. Scheduling a first reminder requests authorization. Permission and banner settings are checked before sending; source-only development runs explicitly report system notifications as unavailable. Click the notification status to open guidance and System Settings. Windows uses Qt tray messages and checks the global disabled-notifications switch when accessible. System permissions, focus modes and policies can prevent native delivery; overdue marks remain visible in the app. OS-owned dialogs can follow the system language; all app-owned UI is English.
+## Farben und Notizen nutzen
 
-## Data and recovery
+Klicke in der Spalte **Color** auf das Plus oder den Farbpunkt. Ein Klick auf eine der **16 Pastellfarben** färbt die Zeile sofort ein. **No color** entfernt die Zuordnung. Unterpunkte behalten ihre eigenen Farben. Bereits vorhandene eigene Farben bleiben erhalten.
 
-`notebook.json` resides in the OS application-data directory; Settings shows its exact path. Tasks, categories, session links and settings persist. Knowledge files stay in the selected folder; only its path and last selection enter JSON. Terminal output and unread flags stay in memory. Agents may keep their own histories independently.
+<img src="docs/images/colors.png" alt="Farbauswahl mit 16 hellen Pastelltönen und No color" width="260">
 
-Task actions and live text edits are saved immediately and atomically. The persistent status shows All changes saved or a visible write failure. JSON retains `notebook.backup.json` as the previous valid version. Corrupt/unknown data versions block startup without overwriting the file. To recover: quit, back up the original, inspect the backup, then deliberately restore it as `notebook.json`. A lock and local startup channel prevent concurrent writers in the same directory.
+Über das Notizsymbol öffnest du ein Textfeld direkt unter der Aufgabe. Hier ist Platz für Details, Fragen oder Ergebnisse. Deine Eingaben werden automatisch gespeichert. Der Papierkorb an der Notiz löscht ihren Inhalt; anschließend kannst du ihn mit **Undo** wiederherstellen.
 
-TXT writes use a temporary file and atomic replacement with external-content checks. As with ordinary file editors, an uncooperative external writer in the final instant before replacement cannot be covered by a portable atomic compare-and-write transaction.
+## Erledigen und rückgängig machen
 
-## Integration limits
+Setze links das Häkchen. In der Ansicht **Open** verschwindet die erledigte Aufgabe; für fünf Sekunden kannst du die Aktion über **Undo** zurücknehmen. Später findest du sie unter **Completed** oder **All** wieder und kannst das Häkchen entfernen.
 
-- Resume starts a new local process using the exact native ID: `opencode --session ID`, `codex resume ID`, `claude --resume ID`, `pi --session ID`. pi also accepts an existing absolute `.jsonl` session-file path. GetItDone does not replay or persist terminal output.
-- **Agent context** works without a session: select an installed CLI and a working folder, then browse **Skills**, **MCPs**, and **Instructions**. Selecting a session switches to its agent/folder. Entries show scope, status and source; selecting one displays its text. Global, shared and inherited instruction sources are included, and Codex override files take precedence. JSONC MCP configuration is parsed; server credentials, command arguments and URLs are hidden.
-- Codex's read-only app-server skill registry includes bundled/plugin skills. OpenCode v2's read-only API supplies registered skills and MCP status when available. No model turn is started and no MCP command is launched by the inspector. Other agents use local discovery. “Available”/“Registered” means a skill can be loaded on demand, not that its full content is in a conversation. Loaded conversation contents are not reported. Running sessions can retain older instructions; CLI overrides, imports, plugins, trust decisions and additional paths are not fully reproduced. Pi extensions/MCP runtime state are not introspected. CLI presence does not verify account authentication.
-- Qt tray fallback clicks identify only the last sent reminder because Qt does not expose a per-message ID. macOS packaged notifications carry the item ID.
-- Word shows text and tables, not exact Office layout, images or embedded objects. PDF pages are rendered even without a text layer; no OCR is promised. Protected/damaged files display errors.
-- Limits: text 8 MB; PDF/Word 150 MB; uncompressed DOCX 50 MB. Previews run no scripts or remote images. External links require a deliberate action.
-- Shutdown signals the agent, then ends remaining members of its process group. Deliberately detached processes outside the group cannot be reliably identified. Existing PTYs are not reattached after a full app restart.
+**Wenn du eine übergeordnete Aufgabe erledigst, werden auch ihre Unterpunkte erledigt.** Undo stellt deren vorherigen Erledigungsstand wieder her. Öffnest du einen Unterpunkt erneut, werden auch seine übergeordneten Aufgaben wieder geöffnet.
 
-## Tests and builds
+## An etwas erinnert werden
 
-```sh
-.venv/bin/python -m pytest -q
-.venv/bin/python -m ruff check app tests scripts
-.venv/bin/python -m app --data-dir /tmp/getitdone-smoke --smoke-terminal
-dist/GetItDone.app/Contents/MacOS/GetItDone --data-dir /tmp/getitdone-notification-test --test-notification
-.venv/bin/python -m PyInstaller --noconfirm GetItDone.spec
-.venv/bin/python scripts/build_dmg.py
-```
+1. Klicke bei der Aufgabe auf die Glocke in **Reminder**.
+2. Wähle Datum und Uhrzeit in deiner lokalen Zeitzone.
+3. Klicke auf **Save**. Der Zeitpunkt steht anschließend direkt in der Zeile.
 
-`terminal_spike.py` probes installed CLIs without sending a prompt; it prints metadata rather than terminal contents. Normal tests cover a real WebEngine/xterm/PTY connection. A real model-call test is opt-in with `GETITDONE_LIVE_OPENCODE=1`.
+<img src="docs/images/reminder.png" alt="Erinnerungsdialog mit Datum, Uhrzeit, Save und Remove reminder" width="640">
 
-xterm.js is pinned and vendored; `scripts/vendor_terminal.py` is only needed for a dependency update. `.github/workflows/build.yml` tests/builds on macOS and Windows; Inno Setup creates the Windows installer. No push or CI run is implied by local work. Public macOS releases require Developer ID signing/notarization, and Windows releases should use your own signing certificate. Local macOS builds are ad-hoc signed. Uninstallers do not delete knowledge files.
+Zum Ändern klickst du erneut auf die Glocke. **Remove reminder** entfernt die Erinnerung.
 
-See [VALIDATION.md](VALIDATION.md) for actual validation and platform limitations, and [the spec](productivity-tool-spec-mit-wissensbereich.md) for the agreed scope and current UX amendments.
+GetItDone muss laufen, damit eine Benachrichtigung erscheinen kann. Das geschlossene Hauptfenster darf dabei im Hintergrund weiterlaufen. War die App zum Termin vollständig beendet, wird die Erinnerung beim nächsten Start als überfällig angezeigt; sie wird nicht nachträglich als Benachrichtigung zugestellt.
 
-## Adapter references
+Über **Help → Test notification** prüfst du die Zustellung. Der Benachrichtigungsstatus unten im Fenster führt zu Hinweisen und Einstellungen. Erlaube GetItDone Benachrichtigungen in den Systemeinstellungen; Fokusmodi können Banner unterdrücken.
 
-Official documentation checked during implementation:
+## Wissen und Dokumente griffbereit halten
 
-- [OpenCode CLI](https://opencode.ai/docs/cli/), [configuration](https://opencode.ai/docs/config/), [skills](https://opencode.ai/docs/skills/)
-- [Codex CLI](https://developers.openai.com/codex/cli/reference/), [configuration](https://developers.openai.com/codex/config-basic/)
-- [Claude Code CLI](https://code.claude.com/docs/en/cli-reference), [MCP](https://code.claude.com/docs/en/mcp)
-- [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)
-- [pywinpty](https://github.com/andfoy/pywinpty), [Qt tray messages](https://doc.qt.io/qt-6/qsystemtrayicon.html)
+Im Reiter **Knowledge** arbeitest du mit Dateien aus einem lokalen Ordner.
+
+![Knowledge mit Dateiliste links und einer geöffneten Textnotiz rechts](docs/images/knowledge.png)
+
+1. Klicke auf **Choose folder** und wähle deinen Wissensordner.
+2. Wähle links eine Datei aus. Über das Suchfeld kannst du Dateinamen filtern.
+3. Mit **New note** erstellst du eine neue Textnotiz. Der Titel wird zum Dateinamen.
+
+| Dateityp | Bedienung in GetItDone |
+| --- | --- |
+| TXT | Lesen und bearbeiten; Änderungen werden nach einer kurzen Schreibpause automatisch gespeichert |
+| Markdown | Formatierte Leseansicht |
+| Word (.docx) | Leseansicht für Text und Tabellen; das Layout kann von Word abweichen |
+| PDF | Seiten direkt im Programm ansehen |
+
+Die Liste zeigt Dateien direkt im gewählten Ordner, keine Unterordner. Neue Notizen werden als echte `.txt`-Dateien gespeichert und lassen sich auch mit anderen Programmen öffnen. Das Symbol **Open externally** öffnet eine Datei in der zugeordneten Anwendung.
+
+Wurde eine Textdatei gleichzeitig außerhalb von GetItDone geändert, stoppt das Speichern und dein Text bleibt im Editor. Mit **Save as new note** bewahrst du ihn als zusätzliche Datei auf. Mit **Refresh** kannst du nach dem Verwerfen lokaler Änderungen die externe Version neu laden.
+
+## Coding-Agenten an Aufgaben öffnen
+
+Du kannst **OpenCode, Codex, Claude Code oder pi** in integrierten Terminals verwenden. Installiere den gewünschten Agenten zunächst separat und melde dich bei ihm an. Die Nutzung richtet sich nach dessen Konto, Berechtigungen und gegebenenfalls Kosten.
+
+1. Klicke an einer Aufgabe auf das Terminalsymbol **New session**.
+2. Wähle den Agenten und den Arbeitsordner, in dem er arbeiten soll.
+3. Bestätige mit **New session**.
+4. Der Aufgabentext wird in die Zwischenablage kopiert. Füge ihn im Terminal ein und sende ihn selbst ab.
+
+Unter der Aufgabe erscheint die verknüpfte Sitzung. **Resume** öffnet ihr laufendes Terminal oder setzt die gespeicherte Sitzung fort, sofern ihre Sitzungs-ID vorliegt. Das Infosymbol öffnet Details wie Arbeitsordner und Sitzungs-ID. Fehlt diese ID bei einer älteren Sitzung, ist eine Fortsetzung erst möglich, wenn sie gefunden oder in den Details ergänzt wurde.
+
+![Aufgaben oben und integriertes Terminal unten mit Symbolen für Kopieren, Einfügen, Maximieren und Auslagern](docs/images/terminals.png)
+
+*Für diesen Screenshot läuft nur eine lokale Demo-Shell, kein Coding-Agent.*
+
+Die Symbolleiste oberhalb der Terminals bietet von links nach rechts:
+
+| Symbol / Tooltip | Funktion |
+| --- | --- |
+| **Paste** | Text aus der Zwischenablage einfügen |
+| **Copy selection** | Markierten Terminaltext kopieren |
+| **Send Ctrl+C** | Ein Strg+C-Signal an den laufenden Prozess senden |
+| **Maximize / Restore** | Terminalbereich vergrößern oder Aufgaben wieder einblenden |
+| **Pop out / Dock** | Terminals in ein eigenes Fenster auslagern oder wieder einbetten |
+
+Schließt du das ausgelagerte Fenster, werden die Terminals wieder in das Hauptfenster eingebettet. Über **View → Terminal panel** kannst du den Bereich ein- und ausblenden. Der aktuelle Terminalverlauf bleibt nur für die Laufzeit der App erhalten; nach einem Neustart wird er nicht wieder angezeigt.
+
+Im Reiter **Agent context** kannst du für einen Agenten und Arbeitsordner gefundene **Skills**, **MCPs** und **Instructions** ansehen. Das funktioniert auch ohne laufende Sitzung. Die Ansicht zeigt gefundene oder konfigurierte Einträge; sie bestätigt nicht, dass der Agent sie in einer bestimmten Unterhaltung tatsächlich geladen oder aktiviert hat.
+
+## Nützliche Tastenkürzel
+
+Klicke vorher auf die gewünschte Aufgabe. Die Kürzel gelten in der Aufgabenliste, nicht beim Schreiben einer mehrzeiligen Notiz.
+
+| Taste | Aktion |
+| --- | --- |
+| **Enter** | Nächste Aufgabe auf derselben Ebene anlegen |
+| **F2** | Aufgabentext bearbeiten |
+| **Tab** | Aufgabe einrücken |
+| **Shift + Tab** | Aufgabe ausrücken |
+| **Alt + ↑ / ↓** | Aufgabe innerhalb ihrer Ebene verschieben |
+
+## Schließen, speichern und sichern
+
+**Fenster schließen** lässt GetItDone im Hintergrund in der Menüleiste beziehungsweise im Infobereich weiterlaufen. So bleiben Erinnerungen und laufende Sitzungen verfügbar. Gibt es keinen Infobereich, bleibt das Fenster minimiert. Mit **File → Quit** beendest du die App vollständig; bei laufenden Sitzungen fragt sie vorher nach.
+
+Aufgaben, Notizen an Aufgaben, Farben, Erinnerungen und Sitzungsverknüpfungen werden lokal gespeichert. Den genauen Speicherort zeigt **Settings**. Wissensdateien bleiben separat in dem von dir gewählten Ordner. Es gibt keine automatische Synchronisierung zwischen Rechnern.
+
+Für ein Backup beendest du die App und sicherst sowohl den in **Settings** angegebenen Datenordner als auch deinen Wissensordner. Neben `notebook.json` liegt `notebook.backup.json` mit dem vorherigen gültigen Speicherstand. Wenn unten ein Speicherfehler angezeigt wird, behebe ihn, bevor du dich auf den gespeicherten Stand verlässt.
+
+## Wenn etwas nicht klappt
+
+| Problem | Das kannst du prüfen |
+| --- | --- |
+| Eine Aufgabe ist verschwunden | Suche leeren und den Filter auf **All** stellen; eingeklappte Gruppen öffnen |
+| Keine Benachrichtigung | App laufen lassen, **Help → Test notification** nutzen und Systemberechtigung sowie Fokusmodus prüfen |
+| Ein Agent fehlt oder startet nicht | Installation und Anmeldung des Agenten sowie den gewählten Arbeitsordner prüfen |
+| Resume meldet eine fehlende ID | Sitzungsdetails öffnen; ohne passende ID lässt sich die ursprüngliche Unterhaltung nicht zuverlässig fortsetzen |
+| Eine Datei lässt sich nicht bearbeiten | In Knowledge sind TXT-Dateien editierbar; andere Formate über **Open externally** bearbeiten |
+| Ein neues Fenster erscheint beim erneuten Start nicht | GetItDone aktiviert normalerweise die bereits laufende Instanz |
+
+Technische Einrichtung, Tests und Builds: [Entwicklerdokumentation](docs/DEVELOPMENT.md). Geprüfte Plattformgrenzen: [Validierung](VALIDATION.md).

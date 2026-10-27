@@ -1,35 +1,37 @@
 from concurrent.futures import ThreadPoolExecutor
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QMessageBox, QTextBrowser
+from PySide6.QtWidgets import QDialog, QMessageBox, QTextBrowser, QVBoxLayout, QWidget
 
 POOL = ThreadPoolExecutor(max_workers=3, thread_name_prefix="documents-context")
 
 
-class Job(QObject):
-    finished = Signal(object, object)
-
+class Job:
     def __init__(self, function, callback, parent):
-        super().__init__(parent)
-        self.finished.connect(callback)
-        self.finished.connect(self.deleteLater)
+        self.callback = callback
         self.future = POOL.submit(function)
-        self.future.add_done_callback(self.done)
+        self.timer = QTimer(parent)
+        self.timer._job = self
+        self.timer.setInterval(25)
+        self.timer.timeout.connect(self.collect)
+        self.timer.start()
 
-    def done(self, future):
+    def collect(self):
+        # Only the GUI thread touches Qt objects. If the owner is destroyed,
+        # its timer disappears while the plain Python future finishes safely.
+        if not self.future.done():
+            return
+        self.timer.stop()
         try:
-            result = future.result()
+            result = self.future.result()
         except Exception as exc:
-            try:
-                self.finished.emit(None, exc)
-            except RuntimeError:
-                pass  # The owning dialog was closed while the worker finished.
+            self.callback(None, exc)
         else:
-            try:
-                self.finished.emit(result, None)
-            except RuntimeError:
-                pass
+            self.callback(result, None)
+        finally:
+            self.timer._job = None
+            self.timer.deleteLater()
 
 
 class SafeBrowser(QTextBrowser):
@@ -63,3 +65,27 @@ def confirm(parent, title, message):
     box.setTextFormat(Qt.PlainText)
     box.setDefaultButton(QMessageBox.No)
     return box.exec() == QMessageBox.Yes
+
+
+class DismissibleDialog(QDialog):
+    """Transient editors cancel when the user clicks outside them."""
+
+    def __init__(self, parent=None):
+        # Native popups dismiss on outside clicks without a Python application
+        # event filter touching WebEngine's private Qt Quick objects.
+        super().__init__(parent, Qt.Popup)
+
+
+class TerminalPopout(QWidget):
+    """Closing the window docks live terminals instead of stopping them."""
+
+    def __init__(self, owner):
+        super().__init__(owner, Qt.Window)
+        self.owner = owner
+        self.setWindowTitle("GetItDone · Terminals")
+        self.resize(1100, 700)
+        QVBoxLayout(self).setContentsMargins(4, 4, 4, 4)
+
+    def closeEvent(self, event):
+        self.owner.dock_terminals()
+        event.accept()

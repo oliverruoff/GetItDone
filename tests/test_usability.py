@@ -45,7 +45,7 @@ def test_palette_is_one_click_and_colors_entire_row(notebook, qtbot):
         assert not popup.isVisible()
         assigned = next(c for c in window.notebook.data["categories"] if c["id"] == item["category_id"])
         assert assigned["name"] == name and assigned["color"] == color
-        assert child["category_id"] is None  # Row colors do not change child categories.
+        assert child["category_id"] == item["category_id"]
         tasks.tree.clearSelection()
         tasks.tree.setCurrentItem(None)
         QApplication.processEvents()
@@ -75,7 +75,9 @@ def test_save_reminder_creates_displays_persists_and_fires_once(notebook, qtbot,
     when = QDateTime.currentDateTime().addSecs(-10)
 
     def save_dialog():
-        dialog = QApplication.activeModalWidget()
+        dialog = next(
+            w for w in QApplication.topLevelWidgets() if isinstance(w, ReminderDialog) and w.isVisible()
+        )
         assert isinstance(dialog, ReminderDialog)
         assert not dialog.findChildren(QCheckBox)
         dialog.when.setDateTime(when)
@@ -98,7 +100,9 @@ def test_save_reminder_creates_displays_persists_and_fires_once(notebook, qtbot,
     assert Store(window.store.folder).load()["items"][0]["reminder"]["notified_at"]
 
     def remove_dialog():
-        dialog = QApplication.activeModalWidget()
+        dialog = next(
+            w for w in QApplication.topLevelWidgets() if isinstance(w, ReminderDialog) and w.isVisible()
+        )
         button = next(b for b in dialog.findChildren(QPushButton) if b.text() == "Remove reminder")
         qtbot.mouseClick(button, Qt.LeftButton)
 
@@ -140,3 +144,47 @@ def test_hierarchy_and_session_actions_are_clear_and_english(notebook):
     assert window.workspace.tabText(0) == "Tasks" and window.workspace.tabText(1) == "Knowledge"
     assert [tasks.status.itemText(n) for n in range(3)] == ["Open", "Completed", "All"]
     assert tasks.tree.headerItem().text(1) == "Color"
+
+
+def test_compact_rows_and_terminal_window_roundtrip(notebook, qtbot):
+    window, item, child, grandchild, _ = notebook
+    tree = window.tasks.tree
+    assert tree.headerItem().text(0) == "Todos"
+    assert tree.columnWidth(2) <= 125
+    assert tree.columnWidth(3) <= 100
+    assert tree.visualItemRect(window.tasks.rows[item["id"]]).height() <= 30
+    window.set_row_color(item["id"], ("Blue", "#335577"))
+    assert item["category_id"] == child["category_id"] == grandchild["category_id"]
+    added = window.notebook.add("New child", parent=item["id"])
+    assert added["category_id"] == item["category_id"]
+    window.toggle_terminal_maximized()
+    assert window.tasks.isHidden()
+    window.toggle_terminal_maximized()
+    assert not window.tasks.isHidden()
+    tabs = window.tabs
+    window.toggle_terminal_popout()
+    assert window.terminal_popout.isVisible()
+    assert window.tabs is tabs
+    assert window.terminal_panel.window() is window.terminal_popout
+    window.terminal_popout.close()
+    assert window.terminal_popout is None
+    assert window.vertical.indexOf(window.terminal_panel) == 1
+
+
+def test_reminder_popup_cancels_on_outside_click(notebook, qtbot):
+    window, item, *_ = notebook
+    dialog = ReminderDialog(item, window)
+    qtbot.addWidget(dialog)
+    dialog.move(window.mapToGlobal(window.rect().center()))
+    dialog.show()
+    qtbot.waitUntil(dialog.isVisible)
+    from PySide6.QtTest import QTest
+
+    QTest.mouseClick(
+        window.windowHandle(),
+        Qt.LeftButton,
+        pos=window.tasks.search.mapTo(window, window.tasks.search.rect().center()),
+    )
+    qtbot.waitUntil(lambda: not dialog.isVisible())
+    assert dialog.result() == 0
+    assert item["reminder"] is None

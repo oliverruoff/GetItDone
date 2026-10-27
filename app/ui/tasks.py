@@ -47,7 +47,6 @@ class ItemDelegate(QStyledItemDelegate):
         background = index.data(ROLE + 2) or QColor("#ffffff")
         painter.save()
         painter.fillRect(cell.rect, background)
-        selected = bool(cell.state & QStyle.State_Selected)
         cell.state &= ~(QStyle.State_Selected | QStyle.State_HasFocus)
         cell.backgroundBrush = QBrush(background)
         title = index.column() == 0 and index.data(ROLE + 1) == "item"
@@ -59,7 +58,9 @@ class ItemDelegate(QStyledItemDelegate):
             document = self.title_document(index, rect.width())
             painter.save()
             painter.setClipRect(rect)
-            painter.translate(rect.left(), rect.top() + 5)
+            painter.translate(
+                rect.left(), rect.top() + max(0, (rect.height() - document.size().height()) / 2)
+            )
             document.drawContents(painter)
             painter.restore()
         if cell.features & QStyleOptionViewItem.HasCheckIndicator:
@@ -80,9 +81,6 @@ class ItemDelegate(QStyledItemDelegate):
         if index.siblingAtColumn(0).data(ROLE + 1) == "item" and index.data(ROLE + 3) == 0:
             painter.setPen(QPen(QColor("#9aaec7"), 2))
             painter.drawLine(cell.rect.topLeft(), cell.rect.topRight())
-        if selected:
-            painter.setPen(QPen(QColor(text_color(background.name())), 1.5))
-            painter.drawRoundedRect(cell.rect.adjusted(2, 2, -2, -2), 5, 5)
         painter.restore()
 
     def title_document(self, index, width):
@@ -115,7 +113,7 @@ class ItemDelegate(QStyledItemDelegate):
             cell.rect.setWidth(self.parent().columnWidth(0))
             rect = self.cell_style.subElementRect(QStyle.SE_ItemViewItemText, cell, cell.widget)
             size.setHeight(
-                max(size.height(), int(self.title_document(index, rect.width()).size().height()) + 14)
+                max(size.height(), int(self.title_document(index, rect.width()).size().height()) + 6)
             )
         return size
 
@@ -138,8 +136,8 @@ class ItemDelegate(QStyledItemDelegate):
             self.initStyleOption(cell, index)
             rect = self.cell_style.subElementRect(QStyle.SE_ItemViewItemText, cell, cell.widget)
             point = event.position() - rect.topLeft()
-            point.setY(point.y() - 5)
             document = self.title_document(index, rect.width())
+            point.setY(point.y() - max(0, (rect.height() - document.size().height()) / 2))
             anchor = document.documentLayout().anchorAt(point)
             if anchor and QUrl(anchor).scheme() in ("https", "http"):
                 QDesktopServices.openUrl(QUrl(anchor))
@@ -201,8 +199,41 @@ class ItemDelegate(QStyledItemDelegate):
 
 
 class TaskTree(QTreeWidget):
+    dropped = Signal(str, object, object)
     new_requested = Signal()
     indent_requested = Signal(bool)
+
+    def dropEvent(self, event):
+        source = self.currentItem()
+        target = self.itemAt(event.position().toPoint())
+        if event.source() is not self or source is None or source.data(0, ROLE + 1) != "item":
+            event.ignore()
+            return
+        parent, before = None, None
+        if target is not None and target.data(0, ROLE + 1) != "add":
+            if target.data(0, ROLE + 1) != "item":
+                event.ignore()
+                return
+            placement = self.dropIndicatorPosition()
+            if placement == QAbstractItemView.OnItem:
+                parent = target.data(0, ROLE)
+            else:
+                parent_row = target.parent()
+                parent = parent_row.data(0, ROLE) if parent_row else None
+                if placement == QAbstractItemView.AboveItem:
+                    before = target.data(0, ROLE)
+                else:
+                    container = parent_row or self.invisibleRootItem()
+                    index = container.indexOfChild(target) + 1
+                    while index < container.childCount():
+                        sibling = container.child(index)
+                        if sibling.data(0, ROLE + 1) == "item":
+                            before = sibling.data(0, ROLE)
+                            break
+                        index += 1
+        self.dropped.emit(source.data(0, ROLE), parent, before)
+        event.setDropAction(Qt.MoveAction)
+        event.accept()
 
     def drawBranches(self, painter, rect, index):
         if index.data(ROLE + 1) == "add":
@@ -291,11 +322,11 @@ class Tasks(QWidget):
         layout.addWidget(hint)
         self.tree = TaskTree()
         self.tree.setObjectName("taskTree")
-        self.tree.setHeaderLabels(["Item / Notes / Sessions", "Color", "Reminder", "Agent status", "Actions"])
+        self.tree.setHeaderLabels(["Todos", "Color", "Reminder", "Agent status", "Actions"])
         self.tree.setColumnWidth(0, 530)
         self.tree.setColumnWidth(1, 56)
-        self.tree.setColumnWidth(2, 170)
-        self.tree.setColumnWidth(3, 145)
+        self.tree.setColumnWidth(2, 125)
+        self.tree.setColumnWidth(3, 100)
         self.tree.setColumnWidth(4, 155)
         self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tree.header().setStretchLastSection(False)
@@ -306,6 +337,10 @@ class Tasks(QWidget):
         self.tree.setUniformRowHeights(False)
         self.tree.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
         self.tree.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.tree.setDragDropMode(QAbstractItemView.InternalMove)
+        self.tree.setDefaultDropAction(Qt.MoveAction)
+        self.tree.setDropIndicatorShown(True)
+        self.tree.dropped.connect(self.drop_item)
         delegate = ItemDelegate(self.tree)
         delegate.next_item.connect(self.editor_next)
         delegate.text_edited.connect(self.edit_text)
@@ -317,6 +352,11 @@ class Tasks(QWidget):
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.menu)
         layout.addWidget(self.tree, 1)
+        self.add_button = QPushButton("+  Add item")
+        self.add_button.setObjectName("addTask")
+        self.add_button.setMinimumHeight(36)
+        self.add_button.clicked.connect(self.append_requested)
+        layout.addWidget(self.add_button)
         self.undo_area = QWidget()
         self.undo_layout = QVBoxLayout(self.undo_area)
         self.undo_layout.setContentsMargins(0, 0, 0, 0)
@@ -327,6 +367,12 @@ class Tasks(QWidget):
         layout.addWidget(self.summary)
         self.refresh_categories()
         self.rebuild()
+
+    def drop_item(self, ident, parent, before):
+        if self.notebook.relocate(ident, parent, before):
+            self.rebuild()
+            self.tree.setCurrentItem(self.rows.get(ident))
+            self.changed.emit()
 
     def toggle_title(self, row):
         ident = row.data(0, ROLE)
@@ -383,7 +429,9 @@ class Tasks(QWidget):
                 row.setFlags(row.flags() | Qt.ItemIsEditable | Qt.ItemIsUserCheckable)
                 row.setCheckState(0, Qt.Checked if item["done"] else Qt.Unchecked)
                 row.setText(0, item["text"])
-                row.setSizeHint(0, QSize(100, 44 if depth == 0 else 38))
+                row.setTextAlignment(0, Qt.AlignLeft | Qt.AlignVCenter)
+                row.setTextAlignment(3, Qt.AlignCenter)
+                row.setSizeHint(0, QSize(100, 28))
                 row.setToolTip(
                     0,
                     "Checkbox: complete · Double-click: edit text\n"
@@ -462,7 +510,7 @@ class Tasks(QWidget):
                     note_row = QTreeWidgetItem(row)
                     note_row.setData(0, ROLE + 1, "note")
                     for column in range(self.tree.columnCount()):
-                        note_row.setData(column, ROLE + 2, QColor("#f7f9fc"))
+                        note_row.setData(column, ROLE + 2, tint)
                         note_row.setData(column, ROLE + 3, depth + 1)
                         note_row.setData(column, ROLE + 4, rail)
                     editor = QPlainTextEdit()
@@ -475,6 +523,9 @@ class Tasks(QWidget):
                     note_row.setFirstColumnSpanned(True)
                     container = QWidget()
                     container.setObjectName("inlineNote")
+                    container.setStyleSheet(
+                        f"QWidget#inlineNote, QWidget#inlineNote QPlainTextEdit {{ background: {tint.name()}; color: {foreground}; }}"
+                    )
                     note_layout = QHBoxLayout(container)
                     note_layout.setContentsMargins(6, 4, 6, 4)
                     note_layout.setSpacing(8)
@@ -493,16 +544,6 @@ class Tasks(QWidget):
                 row.setExpanded(True)
 
         add(None)
-        footer = QTreeWidgetItem(self.tree)
-        footer.setData(0, ROLE + 1, "add")
-        footer.setFlags(Qt.ItemIsEnabled)
-        footer.setFirstColumnSpanned(True)
-        footer.setSizeHint(0, QSize(100, 28))
-        self.add_button = QPushButton("+  Add item")
-        self.add_button.setObjectName("addTask")
-        self.add_button.setMinimumHeight(26)
-        self.add_button.clicked.connect(self.append_requested)
-        self.tree.setItemWidget(footer, 0, self.add_button)
         if selected in self.rows:
             self.tree.setCurrentItem(self.rows[selected])
         self.tree.blockSignals(False)
@@ -655,13 +696,14 @@ class Tasks(QWidget):
         row.setData(0, ROLE, ident)
         row.setData(0, ROLE + 1, "session")
         for column in range(self.tree.columnCount()):
-            row.setData(column, ROLE + 2, QColor("#f2f5f9"))
+            row.setData(column, ROLE + 2, parent.data(column, ROLE + 2))
             row.setData(column, ROLE + 3, (parent.data(0, ROLE + 3) or 0) + 1)
             row.setData(column, ROLE + 4, parent.data(0, ROLE + 4))
         row.setSizeHint(0, QSize(100, 26))
         self.session_rows[ident] = row
         row.setToolTip(0, session["workdir"])
-        row.setForeground(0, QBrush(QColor("#566a81")))
+        row.setForeground(0, parent.foreground(0))
+        row.setTextAlignment(3, Qt.AlignCenter)
         actions = QWidget()
         buttons = QHBoxLayout(actions)
         buttons.setContentsMargins(2, 0, 2, 0)
@@ -674,7 +716,9 @@ class Tasks(QWidget):
         buttons.addWidget(
             icon_button("info", "Session details", lambda checked=False: self.session_details.emit(ident))
         )
-        actions.setStyleSheet("QWidget { background: #f2f5f9; }")
+        actions.setStyleSheet(
+            f"QWidget {{ background: {parent.data(0, ROLE + 2).name()}; color: {parent.foreground(0).color().name()}; }}"
+        )
         self.tree.setItemWidget(row, 4, actions)
         self.update_session(session)
 
@@ -715,9 +759,7 @@ class Tasks(QWidget):
             labels.append("Agent running")
         if message:
             labels.append("New agent message")
-        row.setSizeHint(
-            0, QSize(100, max(44 if row.data(0, ROLE + 3) == 0 else 38, 38 if len(labels) > 1 else 0))
-        )
+        row.setSizeHint(0, QSize(100, max(28, 38 if len(labels) > 1 else 0)))
         row.setText(3, "\n".join(labels) or (str(len(linked)) if linked else ""))
         row.setToolTip(3, " · ".join(labels) or "Linked sessions")
 

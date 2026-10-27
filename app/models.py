@@ -68,7 +68,7 @@ class Notebook:
             text=text,
             notes="",
             done=False,
-            category_id=None,
+            category_id=self.get(parent)["category_id"] if parent else None,
             reminder=None,
             created_at=now_iso(),
             updated_at=now_iso(),
@@ -117,6 +117,33 @@ class Notebook:
             siblings[index], siblings[other] = siblings[other], siblings[index]
             for pos, sibling in enumerate(siblings):
                 sibling["position"] = pos
+
+    def relocate(self, ident, parent=None, before=None):
+        """Move an entire subtree, rejecting cycles and invalid insertion targets."""
+        item = self.get(ident)
+        if item is None or parent == ident or (parent is not None and self.get(parent) is None):
+            return False
+        if parent in {child["id"] for child in self.descendants(ident)}:
+            return False
+        siblings = [child for child in self.children(parent) if child["id"] != ident]
+        if before == ident:
+            return False
+        index = len(siblings)
+        if before is not None:
+            target = next((child for child in siblings if child["id"] == before), None)
+            if target is None:
+                return False
+            index = siblings.index(target)
+        old_parent = item["parent_id"]
+        self.update(ident, parent_id=parent)
+        siblings.insert(index, item)
+        for position, sibling in enumerate(siblings):
+            self.update(sibling["id"], position=position)
+        self.normalize(old_parent)
+        if not item["done"]:
+            for ancestor in self.ancestors(ident):
+                self.update(ancestor["id"], done=False)
+        return True
 
     def indent(self, ident, out=False):
         item = self.get(ident)

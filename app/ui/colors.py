@@ -5,22 +5,22 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QPushButton, QToolButton, QVBoxLayout
 
 PALETTE = (
-    ("Red", "#d83b3b"),
-    ("Orange", "#e87916"),
-    ("Amber", "#eab332"),
-    ("Yellow", "#f4e04d"),
-    ("Lime", "#b5d43b"),
-    ("Green", "#3d9e50"),
-    ("Emerald", "#087f63"),
-    ("Teal", "#249d96"),
-    ("Cyan", "#38bcd6"),
-    ("Sky", "#70b0ef"),
-    ("Blue", "#3565c7"),
-    ("Indigo", "#5743a8"),
-    ("Violet", "#985ac4"),
-    ("Magenta", "#c34793"),
-    ("Rose", "#eda0af"),
-    ("Slate", "#667588"),
+    ("Red", "#f6cccc"),
+    ("Orange", "#f8dcc4"),
+    ("Amber", "#f7e5bc"),
+    ("Yellow", "#faf0bd"),
+    ("Lime", "#e6edc3"),
+    ("Green", "#d1ead3"),
+    ("Emerald", "#c6e6d9"),
+    ("Teal", "#c9e8e3"),
+    ("Cyan", "#ceeef3"),
+    ("Sky", "#d3e7fa"),
+    ("Blue", "#d1dcf5"),
+    ("Indigo", "#dcd5f0"),
+    ("Violet", "#e7d4f1"),
+    ("Magenta", "#f0d0e5"),
+    ("Rose", "#f6dce2"),
+    ("Slate", "#dfe5ec"),
 )
 
 

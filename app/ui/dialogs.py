@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QColorDialog,
     QComboBox,
     QDateTimeEdit,
-    QDialog,
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
@@ -27,10 +26,10 @@ from PySide6.QtWidgets import (
 from app.agents import agents
 from app.models import uid
 from app.session_paths import prepare_session_folder, session_folder
-from app.ui.common import Job, confirm, error
+from app.ui.common import DismissibleDialog, Job, confirm, error
 
 
-class SessionDialog(QDialog):
+class SessionDialog(DismissibleDialog):
     def __init__(self, settings, parent=None):
         super().__init__(parent)
         self.setWindowTitle("New agent session")
@@ -107,7 +106,7 @@ class SessionDialog(QDialog):
             error(self, exc)
 
 
-class ReminderDialog(QDialog):
+class ReminderDialog(DismissibleDialog):
     def __init__(self, item, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Reminder · local time zone")
@@ -146,7 +145,7 @@ class ReminderDialog(QDialog):
         return {"at": when.isoformat(), "notified_at": None}
 
 
-class SettingsDialog(QDialog):
+class SettingsDialog(DismissibleDialog):
     def __init__(self, data, data_path, notification_text, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")

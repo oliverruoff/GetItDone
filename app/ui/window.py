@@ -6,7 +6,6 @@ from PySide6.QtCore import QByteArray, QEvent, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
-    QDialog,
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
@@ -32,9 +31,9 @@ from app.storage import StorageError
 from app.terminal.bridge import Terminal
 from app.ui.agent_context import AgentContextPanel
 from app.ui.colors import ColorPalette
-from app.ui.common import Job, confirm, error
+from app.ui.common import DismissibleDialog, Job, TerminalPopout, confirm, error
 from app.ui.dialogs import ReminderDialog, SessionDialog, SettingsDialog
-from app.ui.icons import icon_button
+from app.ui.icons import icon, icon_button
 from app.ui.knowledge import Knowledge
 from app.ui.tasks import Tasks
 
@@ -62,6 +61,8 @@ class Window(QMainWindow):
         self.store = store
         self.notebook = Notebook(data)
         self.terminals = {}
+        self.terminal_popout = None
+        self.terminals_maximized = False
         self.status_polling = False
         self.context_generation = 0
         self.selected_session = None
@@ -103,6 +104,10 @@ class Window(QMainWindow):
         ]:
             button = icon_button(name, title, callback)
             terminal_header.addWidget(button)
+        self.maximize_terminal_button = icon_button("maximize", "Maximize", self.toggle_terminal_maximized)
+        terminal_header.addWidget(self.maximize_terminal_button)
+        self.popout_terminal_button = icon_button("external", "Pop out", self.toggle_terminal_popout)
+        terminal_header.addWidget(self.popout_terminal_button)
         term_layout.addLayout(terminal_header)
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
@@ -236,7 +241,7 @@ class Window(QMainWindow):
     def notification_settings(self):
         import sys
 
-        dialog = QDialog(self)
+        dialog = DismissibleDialog(self)
         dialog.setWindowTitle("System notifications")
         layout = QVBoxLayout(dialog)
         status = QLabel(self.notifier.status)
@@ -445,7 +450,8 @@ class Window(QMainWindow):
                 category = {"id": uid(), "name": name, "color": color}
                 cats.append(category)
             category_id = category["id"]
-        self.notebook.update(ident, category_id=category_id)
+        for item in [self.notebook.get(ident), *self.notebook.descendants(ident)]:
+            self.notebook.update(item["id"], category_id=category_id)
         self.tasks.refresh_categories()
         self.tasks.rebuild(select=ident)
         self.schedule_save()
@@ -553,6 +559,10 @@ class Window(QMainWindow):
         self.terminal_panel.show()
         self.tabs.setCurrentWidget(terminal)
         self.visibility()
+        if self.terminal_popout:
+            self.terminal_popout.showNormal()
+            self.terminal_popout.raise_()
+            self.terminal_popout.activateWindow()
         terminal.setFocus()
         self.select_session(ident)
 
@@ -587,7 +597,7 @@ class Window(QMainWindow):
         session = self.session(ident)
         if not session:
             return
-        dialog = QDialog(self)
+        dialog = DismissibleDialog(self)
         dialog.setWindowTitle("Session details")
         dialog.resize(620, 330)
         layout = QFormLayout(dialog)
@@ -699,13 +709,73 @@ class Window(QMainWindow):
 
     def visibility(self, *args):
         visible = (
-            self.isVisible()
+            not self.terminal_popout
+            and self.isVisible()
             and not self.isMinimized()
             and self.workspace.currentIndex() == 0
             and self.terminal_panel.isVisible()
         )
         for terminal in list(self.terminals.values()):
-            terminal.mark_visible(visible and terminal is self.tabs.currentWidget())
+            terminal.mark_visible(
+                (
+                    visible
+                    or bool(
+                        self.terminal_popout
+                        and self.terminal_popout.isVisible()
+                        and not self.terminal_popout.isMinimized()
+                    )
+                )
+                and terminal is self.tabs.currentWidget()
+            )
+
+    def update_terminal_button(self, button, name, label):
+        button.setIcon(icon(name))
+        button.setAccessibleName(label)
+        button.setToolTip(label)
+
+    def toggle_terminal_maximized(self):
+        if self.terminal_popout:
+            if self.terminal_popout.isMaximized():
+                self.terminal_popout.showNormal()
+                self.update_terminal_button(self.maximize_terminal_button, "maximize", "Maximize")
+            else:
+                self.terminal_popout.showMaximized()
+                self.update_terminal_button(self.maximize_terminal_button, "restore", "Restore")
+            return
+        self.terminals_maximized = not self.terminals_maximized
+        if self.terminals_maximized:
+            self.terminal_split_sizes = self.vertical.sizes()
+        self.tasks.setVisible(not self.terminals_maximized)
+        self.workspace.tabBar().setVisible(not self.terminals_maximized)
+        self.update_terminal_button(self.maximize_terminal_button, "restore" if self.terminals_maximized else "maximize", "Restore" if self.terminals_maximized else "Maximize")
+        if not self.terminals_maximized:
+            self.vertical.setSizes(self.terminal_split_sizes)
+        self.visibility()
+
+    def toggle_terminal_popout(self):
+        if self.terminal_popout:
+            self.terminal_popout.close()
+            return
+        if self.terminals_maximized:
+            self.toggle_terminal_maximized()
+        self.terminal_popout = TerminalPopout(self)
+        self.terminal_popout.layout().addWidget(self.terminal_panel)
+        self.update_terminal_button(self.popout_terminal_button, "dock", "Dock")
+        self.terminal_popout.show()
+        self.visibility()
+
+    def dock_terminals(self):
+        popout = self.terminal_popout
+        if popout is None:
+            return
+        self.vertical.addWidget(self.terminal_panel)
+        self.terminal_panel.show()
+        self.vertical.setSizes([530, 280])
+        self.update_terminal_button(self.popout_terminal_button, "external", "Pop out")
+        self.terminal_popout = None
+        self.update_terminal_button(self.maximize_terminal_button, "maximize", "Maximize")
+        popout.deleteLater()
+        self.visibility()
 
     def paste_terminal(self):
         terminal = self.tabs.currentWidget()

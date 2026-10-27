@@ -76,3 +76,37 @@ def test_panel_works_without_sessions_and_ignores_stale_results(qtbot, monkeypat
     assert "Actual instructions" in panel.preview.toPlainText()
     assert str(tmp_path) in panel.preview.toPlainText()
     assert panel.agent.currentData() == "test"
+
+
+def test_background_job_delivers_on_gui_thread_and_survives_owner_deletion(qtbot):
+    import threading
+
+    from PySide6.QtCore import QThread
+    from PySide6.QtWidgets import QApplication, QWidget
+    from shiboken6 import isValid
+
+    from app.ui.common import Job
+
+    owner = QWidget()
+    qtbot.addWidget(owner)
+    received = []
+    Job(lambda: "ready", lambda result, exc: received.append((result, exc, QThread.currentThread())), owner)
+    qtbot.waitUntil(lambda: bool(received))
+    assert received == [("ready", None, QApplication.instance().thread())]
+
+    release = threading.Event()
+    started = threading.Event()
+
+    def work():
+        started.set()
+        release.wait(5)
+        return "late"
+
+    job = Job(work, lambda *args: received.append(args), owner)
+    qtbot.waitUntil(started.is_set)
+    owner.deleteLater()
+    qtbot.waitUntil(lambda: not isValid(owner))
+    release.set()
+    qtbot.waitUntil(job.future.done)
+    QApplication.processEvents()
+    assert len(received) == 1
