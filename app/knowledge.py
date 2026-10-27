@@ -124,12 +124,14 @@ class TextDocument:
                 Path(temp).unlink()
 
 
-def create_note(folder, title, text):
+def create_note(folder, title, text, extension=".txt"):
     title = validate_title(title)
     root = Path(folder)
     if not root.is_dir():
         raise DocumentError("Please select an available knowledge folder.")
-    path = root / f"{title}.txt"
+    if extension not in (".txt", ".md"):
+        raise DocumentError("Choose .txt or .md.")
+    path = root / f"{title}{extension}"
     # Case-insensitive collision policy is consistent on macOS and Windows.
     if any(p.name.casefold() == path.name.casefold() for p in root.iterdir()):
         raise DocumentError("A file with this name already exists. Please choose another title.")

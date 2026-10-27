@@ -1,0 +1,3 @@
+Memory / working notes
+
+These are normal TXT files. Edit this note in GetItDone and inspect the same file on disk.

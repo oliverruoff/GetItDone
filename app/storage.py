@@ -85,6 +85,51 @@ def validate(data):
     for key in ("default_workdir", "default_agent", "knowledge_folder", "knowledge_last_file"):
         if key in settings and not isinstance(settings[key], str):
             fail(f"Invalid setting: {key}")
+    view = settings.get("task_view", {})
+    if (not isinstance(view, dict)
+            or any(not isinstance(view.get(key, []), list)
+                   or any(not isinstance(ident, str) for ident in view.get(key, []))
+                   for key in ("titles", "notes", "hidden_notes"))
+            or not isinstance(view.get("expanded", {}), dict)
+            or any(not isinstance(k, str) or type(v) is not bool
+                   for k, v in view.get("expanded", {}).items())):
+        fail("Invalid task view state.")
+    jobs = data.get("scheduled_jobs", [])
+    if not isinstance(jobs, list):
+        fail("Invalid scheduled jobs.")
+
+    def date(value, optional=False):
+        if optional and value is None:
+            return True
+        try:
+            return isinstance(value, str) and datetime.fromisoformat(value).tzinfo is not None
+        except ValueError:
+            return False
+
+    for job in jobs:
+        if (not isinstance(job, dict)
+                or not all(isinstance(job.get(k), str) and job[k]
+                           for k in ("id", "title", "prompt", "agent", "workdir"))
+                or job["id"] in ids
+                or type(job.get("enabled")) is not bool
+                or type(job.get("every")) is not int or not 0 <= job["every"] <= 999
+                or job.get("unit") not in ("minutes", "hours", "days", "weeks", "months")
+                or not date(job.get("next_at"), optional=True)
+                or (job["enabled"] and job.get("next_at") is None)
+                or not isinstance(job.get("runs"), list)):
+            fail("Invalid scheduled job.")
+        ids.add(job["id"])
+        for run in job["runs"]:
+            if (not isinstance(run, dict)
+                    or not all(isinstance(run.get(k), str) for k in
+                               ("id", "output", "prompt", "agent", "workdir"))
+                    or not run["id"] or run["id"] in ids
+                    or run.get("status") not in ("running", "completed", "failed", "interrupted")
+                    or not date(run.get("started_at"))
+                    or not date(run.get("finished_at"), optional=True)
+                    or not isinstance(run.get("session_id"), (str, type(None)))):
+                fail("Invalid scheduled run.")
+            ids.add(run["id"])
     profiles = settings.get("profiles", [])
     if not isinstance(profiles, list) or any(
         not isinstance(p, dict)

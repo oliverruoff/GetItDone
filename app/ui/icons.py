@@ -6,6 +6,9 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QPushButton
 
 PATHS = {
+    "stop": '<rect x="5" y="5" width="14" height="14" rx="1"/>',
+    "plus": '<path d="M12 5v14M5 12h14"/>',
+    "collapse": '<path d="m7 3 5 5 5-5M12 8V3m-5 18 5-5 5 5M12 16v5"/>',
     "maximize": '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',
     "restore": '<rect x="3" y="7" width="14" height="14"/><path d="M7 7V3h14v14h-4"/>',
     "dock": '<rect x="3" y="3" width="18" height="18"/><path d="M3 14h18m-9-9v7m-3-3 3 3 3-3"/>',

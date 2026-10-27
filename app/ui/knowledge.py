@@ -1,10 +1,12 @@
+from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtPdf import QPdfDocument
 from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -41,12 +43,18 @@ class NewNote(QDialog):
         self.setWindowTitle("New note · UTF-8 text file")
         self.resize(600, 420)
         layout = QFormLayout(self)
-        self.title = QLineEdit()
-        self.title.setPlaceholderText("Title = filename without .txt")
+        self.title = QLineEdit(datetime.now().strftime("Note_%Y-%m-%d_%H-%M"))
+        self.extension = QComboBox()
+        self.extension.addItems([".txt", ".md"])
+        self.title.setPlaceholderText("Title = filename without extension")
         self.content = QPlainTextEdit(content)
+        self.content.installEventFilter(self)
         self.problem = QLabel()
         self.problem.setWordWrap(True)
-        layout.addRow("Title", self.title)
+        title_row = QHBoxLayout()
+        title_row.addWidget(self.title, 1)
+        title_row.addWidget(self.extension)
+        layout.addRow("Title", title_row)
         layout.addRow("Text", self.content)
         layout.addRow(self.problem)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -54,10 +62,21 @@ class NewNote(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addRow(buttons)
         self.document = None
+        self.content.setPlaceholderText("Write a note · Enter: save · Shift+Enter: new line")
+        self.content.setFocus()
+
+    def eventFilter(self, watched, event):
+        if (watched is self.content and event.type() == QEvent.KeyPress
+                and event.key() in (Qt.Key_Return, Qt.Key_Enter)
+                and not event.modifiers() & Qt.ShiftModifier):
+            self.save()
+            return True
+        return super().eventFilter(watched, event)
 
     def save(self):
         try:
-            self.document = create_note(self.parent().folder, self.title.text(), self.content.toPlainText())
+            self.document = create_note(self.parent().folder, self.title.text(), self.content.toPlainText(),
+                                        self.extension.currentText())
             self.accept()
         except (DocumentError, OSError) as exc:
             self.problem.setText(str(exc))
@@ -78,6 +97,7 @@ class Knowledge(QWidget):
         self.auto_error = False
         layout = QVBoxLayout(self)
         toolbar = QHBoxLayout()
+        self.toolbar_buttons = []
         for name, title, handler in [
             ("folder", "Choose folder", self.choose_folder),
             ("note", "New note", self.new_note),
@@ -86,12 +106,13 @@ class Knowledge(QWidget):
             ("copy", "Save as new note", self.save_copy),
             ("external", "Open externally", self.open_external),
         ]:
-            if name in ("folder", "note"):
+            if name in ("folder", "note", "copy", "external"):
                 button = QPushButton(icon(name), title)
                 button.clicked.connect(handler)
             else:
                 button = icon_button(name, title, handler)
             toolbar.addWidget(button)
+            self.toolbar_buttons.append(button)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search filenames …")
         self.search.textChanged.connect(self.filter_list)
@@ -101,6 +122,20 @@ class Knowledge(QWidget):
         self.path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.path_label.setWordWrap(True)
         layout.addWidget(self.path_label)
+        self.empty_folder = QPushButton(icon("folder"), "Choose your knowledge folder …")
+        self.empty_folder.clicked.connect(self.choose_folder)
+        self.empty_panel = QWidget()
+        empty_layout = QVBoxLayout(self.empty_panel)
+        empty_layout.addStretch()
+        empty_title = QLabel("Keep your knowledge close at hand")
+        empty_title.setAlignment(Qt.AlignCenter)
+        empty_layout.addWidget(empty_title)
+        empty_hint = QLabel("Choose a local folder for notes and reference documents.")
+        empty_hint.setAlignment(Qt.AlignCenter)
+        empty_layout.addWidget(empty_hint)
+        empty_layout.addWidget(self.empty_folder, 0, Qt.AlignCenter)
+        empty_layout.addStretch()
+        layout.addWidget(self.empty_panel, 1)
         self.splitter = QSplitter()
         self.files = QListWidget()
         self.files.setMinimumWidth(140)
@@ -170,6 +205,12 @@ class Knowledge(QWidget):
         selected = (
             self.current_path.name if self.current_path else self.settings.get("knowledge_last_file", "")
         )
+        self.empty_panel.setVisible(not bool(self.folder))
+        self.path_label.setVisible(bool(self.folder))
+        self.search.setVisible(bool(self.folder))
+        for button in self.toolbar_buttons:
+            button.setVisible(bool(self.folder))
+        self.splitter.setVisible(bool(self.folder))
         self.path_label.setText(f"Folder: {self.folder}" if self.folder else "No knowledge folder selected")
         try:
             paths = list_documents(self.folder) if self.folder else []
@@ -338,6 +379,7 @@ class Knowledge(QWidget):
         if not self.folder or not Path(self.folder).is_dir():
             error(self, "Please select an available knowledge folder first.")
             return
+        self.search.clear()
         dialog = NewNote(self)
         if dialog.exec():
             self.settings["knowledge_last_file"] = dialog.document.path.name

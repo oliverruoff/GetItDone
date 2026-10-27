@@ -26,7 +26,7 @@ Changes are saved automatically. **All changes saved** at the bottom confirms th
 
 ## Editing and organizing tasks
 
-**Double-click the text** to edit it directly in the row. Alternatively, click a task and press **F2**. For long titles, the vertical arrows icon reveals the full text; expanded titles support multiline editing.
+**Double-click the text** to edit it directly in the row. Alternatively, click a task and press **F2**. For long titles, the vertical arrows icon reveals the full text; expanded titles support multiline editing with **Shift+Enter**. **Escape** discards an empty new task; existing task edits are saved.
 
 To move a task, drag it to its new position:
 
@@ -141,6 +141,16 @@ Click the task you want to work with first. These shortcuts apply in the task li
 | **Tab** | Indent the task |
 | **Shift + Tab** | Outdent the task |
 | **Alt + ↑ / ↓** | Move the task within its level |
+
+## Fast capture and scheduled tasks
+
+From any tab (or a popped-out terminal), **Command+T** on macOS / **Ctrl+T** on Windows adds a parent todo at the bottom and focuses its text. **Command/Ctrl+N** opens Knowledge and a new note with the cursor in its content. The editable title defaults to `Note_YYYY-MM-DD_HH-MM`; select `.txt` (default) or `.md`. **Enter** saves the new note; **Shift+Enter** inserts a line break. See **Help → Keyboard shortcuts** for the complete list.
+
+Use the two icon buttons beside the task filter to expand or collapse everything. Individual expansion states and full-title/note visibility save immediately. Expanded items contain a compact **+** for adding children; collapsed parents occupy one row.
+
+The fourth tab, **Scheduled tasks**, manages one-time and recurring agent runs. Choose the prompt, agent, working folder, local date/time and an interval in minutes, hours, days, weeks or months. Use the toolbar to create, edit, run now, stop, delete or pause a job. Each job has a saved inbox with run history, output, session details and Resume. Codex replies are displayed as text; select **Raw process output** for diagnostics. Each run retains the last 1 MB of output locally, including across restarts. Ordinary interactive terminal output still remains in memory only.
+
+Schedules run while GetItDone is open, including when hidden in the menu bar or tray. After reopening, a missed schedule runs once; recurring schedules advance to the next future date without replaying every missed occurrence. A run interrupted by an app crash is marked accordingly and is not automatically repeated. Sign in to the selected agent CLI first. Custom profiles must supply noninteractive arguments; their prompt is appended as one argument. Runs use the CLI's configured permissions and may fail if an interactive permission request is required.
 
 ## Closing, saving, and backing up
 

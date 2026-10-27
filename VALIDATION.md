@@ -127,3 +127,26 @@ Der Live-Test benötigt ein angemeldetes OpenCode v2 und sendet einen kurzen ech
 
 - Moved the complete inspector to the top-level Agent context tab beside Tasks and Knowledge. Tasks now spans the available width above its terminal panel. Removed the obsolete inspector visibility toggle; session/folder synchronization and Knowledge's unsaved-change guard are retained.
 - Verified tab labels, widget ownership and task layout in a rendered window, then visually inspected the new tab. 65 tests passed, 1 optional model-call test skipped.
+
+## Feedback-Überarbeitung · 27.10.2026
+
+- Aufgabenbaum: globale Icon-Buttons zum Ein-/Ausklappen; keine farbigen linken Rails; kompakte Plus-Zeile unter jedem geöffneten Punkt einschließlich Blättern; kein „Check to complete“-Hinweis. Sichtbarkeit und Erstellung eines echten Unterpunkts per Klick geprüft.
+- Individuelle Aufklappzustände und Titel-/Notizansichten werden sofort mitgespeichert. JSON direkt nach dem Klick eingelesen und mit neuem Tasks-Widget wiederhergestellt; eingeklappte Übersicht mit genau einer Zeile pro Parent geprüft.
+- Notizen: `.txt` als Standard, `.md` wählbar, überschreibbarer Titel `Note_YYYY-MM-DD_HH-MM`, Fokus im Inhalt, Enter zum Speichern und Shift+Enter für Zeilenumbruch. Dateiinhalte und Kollisionsschutz geprüft.
+- Command/Ctrl+T und Command/Ctrl+N aus allen vier Tabs über echte Qt-Tastaturereignisse geprüft; neue Parent-Zeile unten, direkter Eingabefokus und sofortige Persistenz. Todo-Shortcut auch aus dem Terminal-Popout geprüft. Help → Keyboard shortcuts ergänzt.
+- Scheduled tasks: Erstellen, Bearbeiten, Pausieren, manuelles Starten, Löschen, persistierte Inbox, Output-Auswahl und Session-Navigation per GUI geprüft. Datum/Uhrzeit lokal; einmalig oder alle N Minuten/Stunden/Tage/Wochen/Monate. Sommer-/Winterzeit und Monatsende getestet.
+- Scheduler mit echten lokalen Prozessen: Ausgabe/Unicode, abgeschlossene und wiederkehrende Runs, keine doppelten Starts, Schreibfehler vor Start, fehlendes Programm, Abbruch und Wiederanlauf nach Unterbrechung. Run wird vor Prozessstart gespeichert; unterbrochene Runs werden nicht automatisch erneut gestartet. Unterprozesse werden beim Stoppen mit beendet.
+- Echter Codex-Modelllauf über den Scheduler: `SCHEDULE_OK` empfangen, Exit 0, native Thread-ID und Output in der Inbox gespeichert. Claude ist lokal nicht installiert; dessen Argumentaufbau ist automatisiert geprüft. Live-Modellläufe für Claude, pi und OpenCode sind in dieser Änderung nicht nachgewiesen. Windows-Ausführung bleibt auf einem Windows-System zu prüfen.
+- Screenshots visuell geprüft: `build/feedback/tasks-expanded.png`, `tasks-collapsed.png`, `new-note.png`, `scheduled-inbox.png`.
+- Scheduler benötigt die geöffnete App (auch versteckt im Tray). Verpasste Ausführungen werden einmal nachgeholt; danach folgt der nächste zukünftige Termin. Pro Run bleiben maximal 1 MB Prozessausgabe erhalten.
+
+Abschluss dieses Durchlaufs: **107 Tests bestanden, 1 optionaler Live-Test übersprungen**; `ruff check app tests` und `git diff --check` erfolgreich. PyInstaller-macOS-Bundle erfolgreich gebaut, `bundle_current(...) == True`; das fertige Bundle mit isoliertem Notebook und `--smoke-terminal` gestartet: **Exit 0, TERMINAL_SMOKE_OK**.
+
+## UX-Abnahme · 27.10.2026
+
+- Shift+Enter fügt in aufgeklappten Aufgabentiteln einen Zeilenumbruch ein; Enter erstellt weiterhin die nächste Aufgabe. Escape entfernt leere neue Entwürfe, ohne bestehende Aufgaben mit Inhalt zu entfernen. Persistenz durch einen zusätzlichen Qt-Test geprüft.
+- Zeitplan-Aktionen folgen Auswahl und Laufstatus; Pause/Enable sind eindeutig beschriftet, Stop besitzt ein eigenes Symbol.
+- Ohne offene Sessions bleibt der Terminalbereich kompakt. Knowledge bietet ohne Ordner einen zentralen Einstieg; Save as new note und Open externally tragen Beschriftungen.
+- Vollständige Qt-Suite mit `QT_QPA_PLATFORM=offscreen`: **108 bestanden, 1 optionaler Live-Test übersprungen**. Nach der letzten Layoutkorrektur zusätzlich **33 betroffene Tests bestanden**. Native Fokusprüfungen waren in dieser Sitzung durch die macOS-Fensteraktivierung unzuverlässig; deshalb wird der vollständige Lauf ausdrücklich als Offscreen-Lauf ausgewiesen.
+- Ruff und Diff-Prüfung erfolgreich. Neues macOS-Bundle gebaut und mit isolierten Daten gestartet: **TERMINAL_SMOKE_OK**, Exit 0, `bundle_current(...) == True`.
+- Sechs Screenshots mit separaten Beispieldaten unter `build/ux-audit/screenshots/` visuell geprüft; Nutzer hat den Stand abgenommen. Keine persönlichen Notizbuchdaten verändert.

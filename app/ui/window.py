@@ -5,6 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QByteArray, QEvent, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QDialogButtonBox,
     QFormLayout,
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMenu,
+    QPlainTextEdit,
     QPushButton,
     QSplitter,
     QSystemTrayIcon,
@@ -27,6 +29,7 @@ from app.agents.status import opencode_snapshot
 from app.models import Notebook, now_iso, uid
 from app.notifications import Notifier
 from app.reminders import Reminders
+from app.scheduling import Scheduler
 from app.storage import StorageError
 from app.terminal.bridge import Terminal
 from app.ui.agent_context import AgentContextPanel
@@ -35,6 +38,7 @@ from app.ui.common import DismissibleDialog, Job, TerminalPopout, confirm, error
 from app.ui.dialogs import ReminderDialog, SessionDialog, SettingsDialog
 from app.ui.icons import icon, icon_button
 from app.ui.knowledge import Knowledge
+from app.ui.scheduled import Scheduled
 from app.ui.tasks import Tasks
 
 
@@ -88,7 +92,9 @@ class Window(QMainWindow):
         task_layout = QVBoxLayout(self.task_page)
         task_layout.setContentsMargins(0, 5, 0, 0)
         self.vertical = QSplitter(Qt.Vertical)
+        self.draft_items = set()
         self.tasks = Tasks(self.notebook, self.terminals)
+        self.tasks.escape_pressed.connect(self.discard_empty_draft)
         self.inspector = AgentContextPanel(self.notebook.data["settings"], self)
         self.vertical.addWidget(self.tasks)
         self.terminal_panel = QWidget()
@@ -115,8 +121,16 @@ class Window(QMainWindow):
         self.tabs.currentChanged.connect(self.visibility)
         self.tabs.tabCloseRequested.connect(self.close_terminal)
         term_layout.addWidget(self.tabs)
+        self.tabs.hide()
+        self.terminal_empty = QLabel("No terminal open · Start a session from a task’s terminal button.")
+        term_layout.addWidget(self.terminal_empty)
+        self.terminal_header = terminal_header
+        for index in range(terminal_header.count()):
+            widget = terminal_header.itemAt(index).widget()
+            if widget:
+                widget.hide()
         self.vertical.addWidget(self.terminal_panel)
-        self.vertical.setSizes([530, 280])
+        self.vertical.setSizes([780, 50])
         self.vertical.setCollapsible(0, False)
         task_layout.addWidget(self.vertical)
         self.knowledge = Knowledge(self.notebook.data["settings"])
@@ -129,13 +143,15 @@ class Window(QMainWindow):
         layout.addWidget(self.workspace)
         self.setCentralWidget(central)
         for title, callback, shortcut in [
-            ("New item", lambda: self.add_item(), "Ctrl+N"),
+            ("New todo", self.quick_todo, "Ctrl+T"),
+            ("New note", self.quick_note, "Ctrl+N"),
             ("Child item", lambda: self.add_item(True), "Ctrl+Shift+N"),
             ("Move up", lambda: self.move(-1), "Alt+Up"),
             ("Move down", lambda: self.move(1), "Alt+Down"),
         ]:
             action = QAction(title, self)
             action.setShortcut(shortcut)
+            action.setShortcutContext(Qt.WindowShortcut)
             action.triggered.connect(callback)
             self.addAction(action)
         self.tasks.action_requested.connect(self.task_action)
@@ -155,6 +171,7 @@ class Window(QMainWindow):
             action.toggled.connect(widget.setVisible)
             action.toggled.connect(self.visibility)
         help_menu = self.menuBar().addMenu("Help")
+        help_menu.addAction("Keyboard shortcuts", self.show_shortcuts)
         help_menu.addAction("Test notification", self.test_notification)
         help_menu.addAction(
             "About GetItDone",
@@ -187,6 +204,15 @@ class Window(QMainWindow):
         self.notifier.native_result.connect(self.notification_result)
         self.notifier.activated.connect(self.open_reminder)
         self.notifier.status_changed.connect(lambda text: self.statusBar().showMessage(text, 20000))
+        self.scheduler = Scheduler(self.notebook, self.flush, self)
+        self.scheduled = Scheduled(self.scheduler)
+        self.scheduled.session_open.connect(self.resume_session)
+        self.scheduled.session_details.connect(self.session_details)
+        self.session_tree_refresh = QTimer(self)
+        self.session_tree_refresh.setSingleShot(True)
+        self.session_tree_refresh.timeout.connect(self.refresh_scheduled_sessions)
+        self.scheduler.sessions_changed.connect(lambda: self.session_tree_refresh.start(0))
+        self.workspace.addTab(self.scheduled, "Scheduled tasks")
         self.tasks.changed.connect(self.schedule_save)
         self.tasks.new_requested.connect(self.add_item)
         self.tasks.indent_requested.connect(self.indent)
@@ -288,21 +314,78 @@ class Window(QMainWindow):
     def save_all(self):
         return self.knowledge.save(interactive=True) and self.flush()
 
+    def refresh_scheduled_sessions(self):
+        focus = QApplication.focusWidget()
+        if (self.tasks.tree.state() == QAbstractItemView.EditingState
+                or isinstance(focus, QPlainTextEdit) and self.tasks.isAncestorOf(focus)):
+            self.session_tree_refresh.start(500)
+            return
+        self.tasks.rebuild()
+
+    def show_shortcuts(self):
+        dialog = DismissibleDialog(self)
+        dialog.setWindowTitle("Keyboard shortcuts")
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(
+            "Command on macOS · Ctrl on Windows / Linux\n\n"
+            "⌘/Ctrl+T — New parent todo at the bottom; type immediately\n"
+            "⌘/Ctrl+N — Knowledge: new note; type immediately\n"
+            "⌘/Ctrl+Shift+N — Add child todo\n"
+            "⌘/Ctrl+S — Save\n⌘/Ctrl+Q — Quit\n"
+            "Alt+Up / Down — Move todo\n"
+            "Todo: Enter — next item; Shift+Enter — new line in expanded titles\n"
+            "Todo: Tab / Shift+Tab — indent / outdent\n"
+            "Todo: Escape — finish editing; double-click / F2 — edit\n"
+            "New note: Enter — save; Shift+Enter — new line; Escape — cancel"))
+        close = QPushButton("Close")
+        close.clicked.connect(dialog.accept)
+        layout.addWidget(close)
+        dialog.exec()
+
+    def quick_todo(self):
+        self.restore()
+        self.workspace.setCurrentIndex(0)
+        if self.workspace.currentIndex() == 0:
+            self.append_item()
+
+    def quick_note(self):
+        self.restore()
+        self.workspace.setCurrentIndex(1)
+        self.knowledge.new_note()
+
     def add_item(self, child=False):
         if self.workspace.currentIndex() == 1:
             self.knowledge.new_note()
             return
         current = self.tasks.current_id()
         parent = current if child else self.notebook.get(current)["parent_id"] if current else None
-        item = self.notebook.add(parent=parent, after=None if child else current)
+        item = self.notebook.add(text="", parent=parent, after=None if child else current)
+        self.draft_items.add(item["id"])
+        if parent:
+            self.tasks.view_state.setdefault("expanded", {})[parent] = True
         self.tasks.search.clear()
         self.tasks.status.setCurrentIndex(0)
         self.tasks.rebuild(select=item["id"])
         self.tasks.tree.scrollToItem(self.tasks.rows[item["id"]])
+        self.tasks.tree.setFocus()
         self.tasks.tree.editItem(self.tasks.rows[item["id"]], 0)
         self.schedule_save()
 
+    def discard_empty_draft(self, ident):
+        item = self.notebook.get(ident)
+        if (ident in self.draft_items and item and not item["text"].strip()
+                and not item["notes"] and not item["reminder"]
+                and not self.notebook.children(ident)
+                and not any(s["item_id"] == ident for s in self.notebook.data["sessions"])):
+            self.notebook.delete(ident)
+            self.draft_items.discard(ident)
+            self.tasks.rebuild()
+            self.flush()
+
     def append_item(self):
+        self.workspace.setCurrentIndex(0)
+        if self.workspace.currentIndex() != 0:
+            return
         self.tasks.tree.setCurrentItem(None)
         self.add_item()
 
@@ -542,6 +625,7 @@ class Window(QMainWindow):
         self.tabs.setTabToolTip(index, session["workdir"])
         self.tabs.setCurrentIndex(index)
         self.terminal_panel.show()
+        self.vertical.setSizes([530, 280])
         self.visibility()
         return True
 
@@ -708,6 +792,15 @@ class Window(QMainWindow):
         self.inspector.follow_session(self.session(self.selected_session))
 
     def visibility(self, *args):
+        has_terminals = self.tabs.count() > 0
+        self.tabs.setVisible(has_terminals)
+        self.terminal_empty.setVisible(not has_terminals)
+        for index in range(self.terminal_header.count()):
+            widget = self.terminal_header.itemAt(index).widget()
+            if widget:
+                widget.setVisible(has_terminals)
+        if not has_terminals and not self.terminal_popout:
+            self.vertical.setSizes([max(1, self.vertical.height() - 48), 48])
         visible = (
             not self.terminal_popout
             and self.isVisible()
@@ -759,6 +852,7 @@ class Window(QMainWindow):
         if self.terminals_maximized:
             self.toggle_terminal_maximized()
         self.terminal_popout = TerminalPopout(self)
+        self.terminal_popout.addActions(self.actions())
         self.terminal_popout.layout().addWidget(self.terminal_panel)
         self.update_terminal_button(self.popout_terminal_button, "dock", "Dock")
         self.terminal_popout.show()
@@ -770,7 +864,7 @@ class Window(QMainWindow):
             return
         self.vertical.addWidget(self.terminal_panel)
         self.terminal_panel.show()
-        self.vertical.setSizes([530, 280])
+        self.vertical.setSizes([780, 50])
         self.update_terminal_button(self.popout_terminal_button, "external", "Pop out")
         self.terminal_popout = None
         self.update_terminal_button(self.maximize_terminal_button, "maximize", "Maximize")
@@ -886,6 +980,7 @@ class Window(QMainWindow):
             apply(read(), None)
 
     def tick(self):
+        self.scheduler.tick()
         # Discovery reads agent files in a worker so large histories cannot freeze typing.
         if not getattr(self, "id_discovery_tick", 0) % 5:
             self.discover_session_ids(background=True)
@@ -942,6 +1037,8 @@ class Window(QMainWindow):
 
     def closeEvent(self, event):
         if self.quitting:
+            for action in self.actions():
+                action.setEnabled(False)
             for terminal in self.terminals.values():
                 if not terminal.running:
                     terminal.close()
@@ -962,10 +1059,11 @@ class Window(QMainWindow):
         if not self.knowledge.guard():
             return
         running = [t for t in self.terminals.values() if t.running]
-        if running and not confirm(
+        scheduled_running = len(self.scheduler.active)
+        if (running or scheduled_running) and not confirm(
             self,
             "Quit GetItDone",
-            f"{len(running)} session(s) are running. Stop the agents and their child processes? Reminders are inactive while the app is closed.",
+            f"{len(running)} session(s) and {scheduled_running} scheduled run(s) are running. Stop the agents and their child processes? Reminders are inactive while the app is closed.",
         ):
             return
         self.notebook.data["settings"]["window_geometry"] = bytes(self.saveGeometry().toBase64()).decode()
@@ -973,6 +1071,7 @@ class Window(QMainWindow):
             return
         self.quitting = True
         self.timer.stop()
+        self.scheduler.shutdown()
         self.saver.stop()
         self.setEnabled(False)
         self.statusBar().showMessage("Stopping sessions …")

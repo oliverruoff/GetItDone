@@ -35,6 +35,7 @@ ROLE = Qt.UserRole
 
 class ItemDelegate(QStyledItemDelegate):
     next_item = Signal(bool, bool)
+    escape_pressed = Signal(str)
     text_edited = Signal(str, str)
 
     def __init__(self, parent):
@@ -155,6 +156,7 @@ class ItemDelegate(QStyledItemDelegate):
         else:
             editor = super().createEditor(parent, option, index)
             editor.textEdited.connect(lambda text, ident=index.data(ROLE): self.text_edited.emit(ident, text))
+        editor.setProperty("taskId", index.data(ROLE))
         editor.setObjectName("itemTextEditor")
         editor.setFont(index.data(Qt.FontRole))
         background = index.data(ROLE + 2).name()
@@ -181,7 +183,9 @@ class ItemDelegate(QStyledItemDelegate):
     def eventFilter(self, editor, event):
         if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
             self.commitData.emit(editor)
+            ident = editor.property("taskId")
             self.closeEditor.emit(editor, QAbstractItemDelegate.NoHint)
+            QTimer.singleShot(0, lambda: self.escape_pressed.emit(ident))
             return True
         if event.type() == QEvent.KeyPress and event.key() in (
             Qt.Key_Return,
@@ -189,6 +193,9 @@ class ItemDelegate(QStyledItemDelegate):
             Qt.Key_Tab,
             Qt.Key_Backtab,
         ):
+            if (isinstance(editor, QPlainTextEdit) and event.key() in (Qt.Key_Return, Qt.Key_Enter)
+                    and event.modifiers() & Qt.ShiftModifier):
+                return False
             key = event.key()
             backwards = key == Qt.Key_Backtab or bool(event.modifiers() & Qt.ShiftModifier)
             self.commitData.emit(editor)
@@ -240,17 +247,8 @@ class TaskTree(QTreeWidget):
             painter.fillRect(rect, QColor("#ffffff"))
             return
         background = index.data(ROLE + 2) or QColor("#ffffff")
-        accent = index.data(ROLE + 4) or QColor("#8799b0")
         painter.fillRect(rect, background)
         super().drawBranches(painter, rect, index)
-        painter.save()
-        painter.fillRect(2, rect.top(), 4, rect.height(), accent)
-        depth = index.data(ROLE + 3) or 0
-        painter.setPen(QPen(accent, 1))
-        for level in range(depth):
-            x = 17 + level * self.indentation()
-            painter.drawLine(x, rect.top(), x, rect.bottom())
-        painter.restore()
 
     def keyPressEvent(self, event):
         if self.state() != QAbstractItemView.EditingState:
@@ -279,6 +277,7 @@ class Tasks(QWidget):
     note_undo_requested = Signal(str)
     action_requested = Signal(str, str)
     append_requested = Signal()
+    escape_pressed = Signal(str)
     changed = Signal()
     selected = Signal(str)
     session_resume = Signal(str)
@@ -294,9 +293,10 @@ class Tasks(QWidget):
         self.terminals = terminal_lookup
         self.rows = {}
         self.session_rows = {}
-        self.titles_open = set()
-        self.notes_open = set()
-        self.notes_hidden = set()
+        self.view_state = notebook.data["settings"].setdefault("task_view", {})
+        self.titles_open = set(self.view_state.get("titles", []))
+        self.notes_open = set(self.view_state.get("notes", []))
+        self.notes_hidden = set(self.view_state.get("hidden_notes", []))
         self.building = False
         self.completion_overlay = None
         self.undo_notices = {}
@@ -314,12 +314,8 @@ class Tasks(QWidget):
         filterbar.addWidget(self.search, 1)
         filterbar.addWidget(self.status)
         layout.addLayout(filterbar)
-        hint = QLabel(
-            "Check to complete · Double-click to edit · Indentation and colored rails show parent groups"
-        )
-        hint.setObjectName("taskHint")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        filterbar.addWidget(icon_button("expand", "Expand all", lambda: self.set_all_expanded(True)))
+        filterbar.addWidget(icon_button("collapse", "Collapse all", lambda: self.set_all_expanded(False)))
         self.tree = TaskTree()
         self.tree.setObjectName("taskTree")
         self.tree.setHeaderLabels(["Todos", "Color", "Reminder", "Agent status", "Actions"])
@@ -342,9 +338,12 @@ class Tasks(QWidget):
         self.tree.setDropIndicatorShown(True)
         self.tree.dropped.connect(self.drop_item)
         delegate = ItemDelegate(self.tree)
+        delegate.escape_pressed.connect(self.escape_pressed)
         delegate.next_item.connect(self.editor_next)
         delegate.text_edited.connect(self.edit_text)
         self.tree.setItemDelegate(delegate)
+        self.tree.itemExpanded.connect(lambda row: self.expansion_changed(row, True))
+        self.tree.itemCollapsed.connect(lambda row: self.expansion_changed(row, False))
         self.tree.itemChanged.connect(self.item_changed)
         self.tree.currentItemChanged.connect(self.selection_changed)
         self.tree.new_requested.connect(lambda: self.new_requested.emit(False))
@@ -382,6 +381,26 @@ class Tasks(QWidget):
             self.titles_open.add(ident)
         row.setData(0, ROLE + 5, ident in self.titles_open)
         self.tree.scheduleDelayedItemsLayout()
+        self.save_view()
+
+    def save_view(self):
+        self.view_state.update(titles=sorted(self.titles_open), notes=sorted(self.notes_open),
+                               hidden_notes=sorted(self.notes_hidden))
+        self.changed.emit()
+
+    def expansion_changed(self, row, expanded):
+        if not self.building and row.data(0, ROLE + 1) == "item":
+            self.view_state.setdefault("expanded", {})[row.data(0, ROLE)] = expanded
+            self.save_view()
+
+    def set_all_expanded(self, expanded):
+        self.tree.blockSignals(True)
+        states = self.view_state.setdefault("expanded", {})
+        for ident, row in self.rows.items():
+            row.setExpanded(expanded)
+            states[ident] = expanded
+        self.tree.blockSignals(False)
+        self.save_view()
 
     def editor_next(self, indent, backwards):
         if indent:
@@ -541,7 +560,22 @@ class Tasks(QWidget):
                 for session in linked:
                     self.add_session(row, session)
                 add(ident, row, depth + 1, rail)
-                row.setExpanded(True)
+                plus_row = QTreeWidgetItem(row)
+                plus_row.setData(0, ROLE + 1, "add")
+                plus_row.setFirstColumnSpanned(True)
+                plus_row.setSizeHint(0, QSize(100, 20))
+                plus = icon_button("plus", "Add child item", lambda checked=False, i=ident:
+                                   self.action_requested.emit(i, "child"))
+                plus.setFixedSize(24, 20)
+                plus.setStyleSheet("QPushButton { border: none; background: transparent; padding: 1px; }"
+                                  "QPushButton:hover { background: #e8edf5; }")
+                strip = QWidget()
+                strip_layout = QHBoxLayout(strip)
+                strip_layout.setContentsMargins(0, 0, 0, 0)
+                strip_layout.addWidget(plus)
+                strip_layout.addStretch()
+                self.tree.setItemWidget(plus_row, 0, strip)
+                row.setExpanded(self.view_state.get("expanded", {}).get(ident, True))
 
         add(None)
         if selected in self.rows:
@@ -795,6 +829,7 @@ class Tasks(QWidget):
             self.notes_open.add(ident)
             self.notes_hidden.discard(ident)
         self.rebuild(select=ident)
+        self.save_view()
 
     def item_menu(self, ident, position=None):
         menu = QMenu(self)
