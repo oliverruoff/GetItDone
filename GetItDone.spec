@@ -13,7 +13,8 @@ hidden = ['app.terminal.child', 'app.terminal.macos' if sys.platform != 'win32' 
 if sys.platform == 'darwin':
     hidden += ['UserNotifications', 'Foundation', 'objc']
 if sys.platform == 'win32':
-    hidden += ['winpty']
+    from PyInstaller.utils.hooks import collect_submodules
+    hidden += ['winpty'] + collect_submodules('windows_toasts') + collect_submodules('winrt')
 a = Analysis([str(root / 'app/main.py')], pathex=[str(root)],
     binaries=[], datas=[(str(root / 'app/terminal/web'), 'app/terminal/web'),
                         (str(root / 'app/ui/assets'), 'app/ui/assets'),
@@ -37,11 +38,12 @@ if sys.platform == 'darwin':
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='GetItDone', debug=False,
     bootloader_ignore_signals=False, strip=False, upx=False, console=False,
+    icon=str(root / 'app/ui/assets/getitdone.ico') if sys.platform == 'win32' else None,
     disable_windowed_traceback=False, argv_emulation=False, target_arch=None,
     codesign_identity=None, entitlements_file=str(root / 'scripts/entitlements.plist') if sys.platform == 'darwin' else None)
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='GetItDone')
 if sys.platform == 'darwin':
-    app = BUNDLE(coll, name='GetItDone.app', icon=None,
+    app = BUNDLE(coll, name='GetItDone.app', icon=str(root / 'app/ui/assets/getitdone.icns'),
         bundle_identifier='de.getitdone.notebook',
         info_plist={'CFBundleDisplayName': 'GetItDone', 'CFBundleShortVersionString': '0.1.0',
                     'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': '12.0',

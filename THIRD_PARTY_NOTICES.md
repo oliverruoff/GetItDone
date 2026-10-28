@@ -8,6 +8,8 @@ GetItDone uses the following independently licensed components. Corresponding li
 - python-docx: MIT. https://github.com/python-openxml/python-docx
 - lxml: BSD and associated libxml2/libxslt licenses. https://lxml.de/copyright.html
 - pywinpty (Windows): MIT. https://github.com/andfoy/pywinpty
+- Windows-Toasts (Windows): MIT. https://github.com/DatGuy1/Windows-Toasts
+- PyWinRT / winrt-runtime and Windows projections (Windows): MIT. https://github.com/pywinrt/pywinrt
 - PyObjC (macOS): MIT. https://github.com/ronaldoussoren/pyobjc
 - PyInstaller build bootloader: GPL with distribution exception. https://pyinstaller.org/en/stable/license.html
 

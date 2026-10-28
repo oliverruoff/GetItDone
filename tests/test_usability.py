@@ -119,8 +119,9 @@ def test_hierarchy_and_session_actions_are_clear_and_english(notebook):
     assert rows[child["id"]].parent() is rows[root["id"]]
     assert rows[grandchild["id"]].parent() is rows[child["id"]]
     assert rows[next_root["id"]].parent() is None
-    assert rows[root["id"]].font(0).bold()
+    assert not rows[root["id"]].font(0).bold()
     assert not rows[child["id"]].font(0).bold()
+    assert rows[root["id"]].font(0).pixelSize() == rows[child["id"]].font(0).pixelSize() == 13
     assert rows[root["id"]].data(0, ROLE + 4) == rows[grandchild["id"]].data(0, ROLE + 4)
     assert rows[next_root["id"]].data(0, ROLE + 4) != rows[root["id"]].data(0, ROLE + 4)
     assert tasks.tree.indentation() >= 30

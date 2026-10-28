@@ -14,6 +14,42 @@ Open **GetItDone**. On macOS, you can drag the app into Applications and launch 
 
 Installers from successful builds are available as [GitHub Actions artifacts](https://github.com/oliverruoff/GetItDone/actions/workflows/build.yml). Open a successful run for your operating system and download the matching artifact; you may need to sign in to GitHub. For setup from source, see the [technical guide](docs/DEVELOPMENT.md).
 
+### Installation by a coding agent (including `gid`)
+
+Ask your agent to install Git and Python 3.12+ if needed, then follow the platform commands below. Do not use an administrator shell. The editable installation connects `gid` to the clone; keep that folder at a stable location.
+
+**macOS (Terminal, iTerm, zsh, bash, fish):** install pipx using `brew install pipx` (requires Homebrew), then:
+
+```sh
+git clone https://github.com/oliverruoff/GetItDone.git
+cd GetItDone
+pipx ensurepath
+pipx install --editable '.[dev]'
+```
+
+**Windows (PowerShell, cmd, Windows Terminal, Git Bash):** install pipx with `py -m pip install --user pipx`, then run these commands in PowerShell or cmd:
+
+```text
+git clone https://github.com/oliverruoff/GetItDone.git
+cd GetItDone
+py -m pipx ensurepath
+py -m pipx install --editable ".[dev]"
+```
+
+Close and reopen the terminal application to refresh PATH, then run **`gid`** from any directory. This is an installed executable (`gid.exe` on Windows), not a shell alias; no virtual-environment activation is required. `pipx ensurepath` adds pipx's command directory to the user PATH. Shells with a custom PATH must preserve that directory. Verify with `command -v gid` (macOS/Git Bash), `Get-Command gid` (PowerShell), or `where gid` (cmd). WSL has a separate Linux environment. Linux source installations can use the same pipx editable install, but Linux desktop behavior is not part of verified macOS/Windows support.
+
+The first macOS launch builds the app bundle needed for notifications. Agent CLIs such as OpenCode must still be installed and authenticated separately. The packaged Windows installer does not install Python or `gid`; use the source procedure above when `gid` is required.
+
+### Updates by a coding agent
+
+1. Quit with **File → Quit**. Back up the data folder shown in Settings and the separate Knowledge folder.
+2. In the original clone, inspect `git status --short`, the current branch and its upstream. Preserve local changes; never reset, clean, or overwrite them to update.
+3. Run `git pull --ff-only` on the intended branch. Stop and ask if history diverges or local changes conflict.
+4. From the checkout, refresh dependencies with `pipx runpip getitdone-notebook install --editable '.[dev]'` on macOS, or `py -m pipx runpip getitdone-notebook install --editable ".[dev]"` on Windows.
+5. Run `gid` and check the build revision in the title. macOS rebuilds a stale bundle automatically; Windows source launches use the updated checkout.
+
+For a `.venv` setup instead of pipx, use its Python for `-m pip install -e ".[dev]"` and the tests/build commands in the technical guide. Installed binaries require a new platform build/installer; pulling source alone does **not** update an installed executable. Do not delete notebook data during updates.
+
 To create your first tasks:
 
 1. In the **Tasks** tab, click **+ Add item** at the bottom.
@@ -23,6 +59,8 @@ To create your first tasks:
 5. Tick the checkbox when the task is complete.
 
 Changes are saved automatically. **All changes saved** at the bottom confirms that your current work has been saved.
+
+Paste multiline text into a task title to create one todo per nonempty line at the same level. An empty title receives the first line; otherwise the new todos follow the current task. Task notes keep normal multiline paste behavior.
 
 ## Editing and organizing tasks
 
@@ -80,6 +118,8 @@ GetItDone must be running to deliver a notification. It can keep running in the 
 
 Use **Help → Test notification** to check delivery. The notification status at the bottom of the window opens guidance and settings. Allow GetItDone notifications in your system settings; focus modes can suppress banners.
 
+On Windows, GetItDone registers its own notification identity and uses native Notification Center toasts rather than tray balloons. Start the updated app and send a test notification, then open **Settings → System → Notifications → GetItDone** and enable notifications and banners. Windows may not list a sender until its first notification. If missing, check the in-app notification status for registration/dependency errors, and reinstall the current installer or refresh source dependencies. Check global notifications, Do Not Disturb and organizational policies too. GetItDone cannot override a denied system setting.
+
 ## Keeping knowledge and documents close at hand
 
 The **Knowledge** tab works with files from a local folder.
@@ -93,11 +133,13 @@ The **Knowledge** tab works with files from a local folder.
 | File type | What you can do in GetItDone |
 | --- | --- |
 | TXT | Read and edit; changes are saved automatically after a short typing pause |
-| Markdown | Read in a formatted view |
+| Markdown | Edit source text; changes are saved automatically |
 | Word (.docx) | Read text and tables; the layout may differ from Word |
 | PDF | View pages directly in the app |
 
 The list shows files directly inside the selected folder, without searching subfolders. New notes are saved as real `.txt` files that you can also open in other applications. **Open externally** opens a file in its associated application.
+
+Use the sort selector for **Name · A–Z** or **Modified · newest first**. Edit a TXT/Markdown title directly above the right-hand editor and press Enter or leave the field to rename the file. Existing filenames are never deliberately overwritten. **Delete file** asks for confirmation before permanently deleting the selected file from disk (not the recycle bin).
 
 If a text file changes outside GetItDone while you are editing it, saving stops and your text stays in the editor. Use **Save as new note** to preserve your text in a separate file. **Refresh** lets you reload the external version after discarding local changes.
 
@@ -129,6 +171,8 @@ The toolbar above the terminals provides these controls, from left to right:
 | **Pop out / Dock** | Move terminals into a separate window or dock them again |
 
 Closing the separate window docks the terminals back into the main window. Use **View → Terminal panel** to show or hide the panel. Terminal history is kept only while the app is running and is not restored after a restart.
+
+Use the scrollbar/wheel for terminal history, or **Shift+PageUp / Shift+PageDown** and **Shift+wheel** to scroll without sending those actions to the agent. Full-screen agents can use an alternate screen with no shell scrollback; their own conversation scrolling remains agent-controlled. Maximizing, docking and popping out automatically resize the terminal grid.
 
 In **Agent context**, you can inspect discovered **Skills**, **MCPs**, and **Instructions** for an agent and working folder, even without a running session. This view shows discovered or configured entries; it does not confirm that an agent has loaded or activated them in a particular conversation.
 
@@ -166,6 +210,8 @@ Select an entry to read its saved output. Scheduled runs retain their inbox outp
 
 **Closing the window** keeps GetItDone running in the background in the menu bar or system tray, so reminders and running sessions remain available. If no system tray is available, the window stays minimized. Use **File → Quit** to exit completely; the app asks before stopping running sessions.
 
+Enable **Settings → Startup → Start GetItDone when I sign in** for automatic launch after login. Disable the same checkbox to remove it. Startup uses the current installation path; after moving the app, disable/re-enable the option from its new location. This starts after user login, not before login as a system service.
+
 Tasks, task notes, colors, reminders, and session links are stored locally. **Settings** shows the exact storage location. Knowledge files remain separate in the folder you selected. There is no automatic synchronization between computers.
 
 Every save writes and flushes a temporary file before atomically replacing `notebook.json`. The app keeps up to three backup generations alongside it: `notebook.backup.json`, `notebook.backup.2.json`, and `notebook.backup.3.json`. The first save also creates a backup; unchanged saves do not rotate history. On macOS/Linux the containing directory is flushed too.
@@ -184,7 +230,7 @@ For an independent backup, quit the app and back up both the data folder shown i
 | No notification appears | Keep the app running, use **Help → Test notification**, and check system permissions and focus mode |
 | An agent is missing or will not start | Check the agent's installation and sign-in, and the selected working folder |
 | Resume reports a missing ID | Open the session details; the original conversation cannot be reliably resumed without its matching ID |
-| A file cannot be edited | Knowledge supports editing TXT files; use **Open externally** for other formats |
+| A file cannot be edited | Knowledge edits TXT and Markdown; use **Open externally** for Word/PDF |
 | Launching the app again does not open a new window | GetItDone normally activates the existing instance |
 
 For technical setup, tests, and builds, see the [developer documentation](docs/DEVELOPMENT.md). For verified platform limitations, see [validation notes](VALIDATION.md).

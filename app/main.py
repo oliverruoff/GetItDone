@@ -120,6 +120,9 @@ def main():
     QApplication.setOrganizationName("GetItDone")
     QApplication.setApplicationName("GetItDone")
     app = QApplication(sys.argv[:1])
+    from PySide6.QtGui import QIcon
+
+    app.setWindowIcon(QIcon(str(Path(__file__).parent / "ui/assets/getitdone.svg")))
     app.setQuitOnLastWindowClosed(False)
     folder = args.data_dir or Path(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation))
     try:

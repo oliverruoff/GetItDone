@@ -40,7 +40,7 @@ def test_config_values_never_displayed_and_nested_skills_found(tmp_path, monkeyp
     base.mkdir(parents=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
     (base / "opencode.jsonc").write_text('{"mcp":{"safe":{"enabled":false,"env":{"TOKEN":"secret"}},},}')
-    skill = base / "skills/.system/testing/SKILL.md"
+    skill = base / "skills/team/testing/SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("Read this skill")
     _, findings = discover("opencode", tmp_path, home)

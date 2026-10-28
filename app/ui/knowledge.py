@@ -105,6 +105,7 @@ class Knowledge(QWidget):
             ("save", "Save", self.save_clicked),
             ("copy", "Save as new note", self.save_copy),
             ("external", "Open externally", self.open_external),
+            ("trash", "Delete file", self.delete_file),
         ]:
             if name in ("folder", "note", "copy", "external"):
                 button = QPushButton(icon(name), title)
@@ -117,6 +118,12 @@ class Knowledge(QWidget):
         self.search.setPlaceholderText("Search filenames …")
         self.search.textChanged.connect(self.filter_list)
         toolbar.addWidget(self.search, 1)
+        self.sort = QComboBox()
+        self.sort.addItem("Name · A–Z", "name")
+        self.sort.addItem("Modified · newest first", "modified")
+        self.sort.setCurrentIndex(max(0, self.sort.findData(settings.get("knowledge_sort", "name"))))
+        self.sort.currentIndexChanged.connect(self.sort_changed)
+        toolbar.addWidget(self.sort)
         layout.addLayout(toolbar)
         self.path_label = QLabel()
         self.path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -143,9 +150,10 @@ class Knowledge(QWidget):
         self.splitter.addWidget(self.files)
         content = QWidget()
         right = QVBoxLayout(content)
-        self.title = QLabel("Knowledge · Local documents")
+        self.title = QLineEdit("Knowledge · Local documents")
+        self.title.setReadOnly(True)
+        self.title.editingFinished.connect(self.rename_note)
         self.title.setObjectName("documentTitle")
-        self.title.setTextFormat(Qt.PlainText)
         right.addWidget(self.title)
         self.status = QLabel("Please select a local folder.")
         self.status.setWordWrap(True)
@@ -198,8 +206,53 @@ class Knowledge(QWidget):
         self.pdf_document.close()
         self.stack.setCurrentWidget(self.placeholder)
         self.title.setText("Knowledge · Local documents")
+        self.title.setReadOnly(True)
 
-    def refresh(self, checked=False, initial=False):
+    def sort_changed(self):
+        self.settings["knowledge_sort"] = self.sort.currentData()
+        self.settings_changed.emit()
+        self.refresh()
+
+    def rename_note(self):
+        if not self.document or self.title.isReadOnly():
+            return
+        if self.title.text() == self.document.path.stem:
+            return
+        try:
+            if not self.save(interactive=True):
+                return
+            self.document.rename(self.title.text())
+            self.current_path = self.document.path
+            self.settings["knowledge_last_file"] = self.current_path.name
+            self.settings_changed.emit()
+            self.refresh(preserve_document=True)
+        except DocumentError as exc:
+            error(self, exc)
+            self.title.setText(self.document.path.stem)
+
+    def delete_file(self):
+        path = self.current_path
+        if path is None or not self.guard():
+            return
+        box = QMessageBox(QMessageBox.Warning, "Delete file",
+                          f'Permanently delete "{path.name}" from disk? This cannot be undone.',
+                          QMessageBox.Yes | QMessageBox.Cancel, self)
+        box.setTextFormat(Qt.PlainText)
+        box.setDefaultButton(QMessageBox.Cancel)
+        if box.exec() != QMessageBox.Yes:
+            return
+        self.pdf_document.close()
+        try:
+            path.unlink()
+        except OSError as exc:
+            error(self, exc)
+            return
+        self.settings["knowledge_last_file"] = ""
+        self.settings_changed.emit()
+        self.clear_document()
+        self.refresh()
+
+    def refresh(self, checked=False, initial=False, preserve_document=False):
         if not initial and not self.guard():
             return
         selected = (
@@ -213,7 +266,7 @@ class Knowledge(QWidget):
         self.splitter.setVisible(bool(self.folder))
         self.path_label.setText(f"Folder: {self.folder}" if self.folder else "No knowledge folder selected")
         try:
-            paths = list_documents(self.folder) if self.folder else []
+            paths = list_documents(self.folder, self.sort.currentData()) if self.folder else []
         except DocumentError as exc:
             self.files.blockSignals(True)
             self.files.clear()
@@ -234,7 +287,9 @@ class Knowledge(QWidget):
         self.files.blockSignals(False)
         self.filter_list()
         if chosen:
+            self.files.blockSignals(preserve_document)
             self.files.setCurrentItem(chosen)
+            self.files.blockSignals(False)
         else:
             self.clear_document()
             self.status.setText(
@@ -298,18 +353,17 @@ class Knowledge(QWidget):
                 if exc:
                     self.status.setText(str(exc))
                     return
-                if suffix == ".txt":
+                if suffix in (".txt", ".md", ".markdown"):
                     self.document = result
+                    self.title.setText(path.stem)
+                    self.title.setReadOnly(False)
                     self.loading = True
                     self.editor.setPlainText(result.text)
                     self.loading = False
                     self.stack.setCurrentWidget(self.editor)
-                    self.status.setText("Saved · TXT changes are saved automatically after a short pause")
+                    self.status.setText("Saved · Title and text are editable; text saves automatically")
                 else:
-                    if suffix in (".md", ".markdown"):
-                        self.browser.setMarkdown(result.text)
-                    else:
-                        self.browser.setHtml(result)
+                    self.browser.setHtml(result)
                     self.stack.setCurrentWidget(self.browser)
                     self.status.setText("Read-only preview · The local file is unchanged")
 

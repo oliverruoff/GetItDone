@@ -16,6 +16,7 @@ class Notifier(QObject):
         self.tray = tray
         self.last_item = ""
         self.center = None
+        self.windows = None
         self.permission = "unknown"
         self.status_changed.connect(self.set_status)
         self.status = "Use Test notification to verify system notification permissions."
@@ -26,21 +27,18 @@ class Notifier(QObject):
             else:
                 self.permission = "unavailable"
                 self.status = "System notifications are unavailable in the Python source process. Start GetItDone with run.command or GetItDone.app."
+        elif sys.platform == "win32":
+            try:
+                from app.notifications.windows import WindowsNotifications
+
+                self.windows = WindowsNotifications()
+                self.status = "Windows notifications registered as GetItDone. Use Test notification, then check Settings → System → Notifications."
+            except Exception as exc:
+                self.status = "Native Windows notifications unavailable: " + str(exc)
         elif not QSystemTrayIcon.supportsMessages():
             self.status = (
                 "System notifications are unavailable. Check your operating system notification settings."
             )
-        elif sys.platform == "win32":
-            try:
-                import winreg
-
-                with winreg.OpenKey(
-                    winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\PushNotifications"
-                ) as key:
-                    if winreg.QueryValueEx(key, "ToastEnabled")[0] == 0:
-                        self.status = "Windows notifications are disabled. Enable them in Settings → System → Notifications."
-            except OSError:
-                pass
 
     def setup_macos(self):
         try:
@@ -124,7 +122,16 @@ class Notifier(QObject):
 
     def send(self, item):
         self.last_item = item["id"]
-        if self.center:
+        if sys.platform == "win32":
+            try:
+                if not self.windows:
+                    raise OSError(self.status)
+                self.windows.send(item, self.activated.emit, self.native_result.emit)
+                self.native_result.emit(item["id"], True, "Submitted to Windows Notification Center; focus mode may suppress banners.")
+            except Exception as exc:
+                self.status_changed.emit(str(exc))
+                self.native_result.emit(item["id"], False, str(exc))
+        elif self.center:
 
             def schedule(settings):
                 import UserNotifications as UN

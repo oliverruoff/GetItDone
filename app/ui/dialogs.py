@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from PySide6.QtCore import QDateTime, QLocale, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QCheckBox,
     QColorDialog,
     QComboBox,
     QDateTimeEdit,
@@ -168,6 +169,15 @@ class SettingsDialog(DismissibleDialog):
             self.agent.addItem(agent.name, ident)
         self.agent.setCurrentIndex(max(0, self.agent.findData(self.settings.get("default_agent"))))
         form.addRow("Default agent", self.agent)
+        from app import autostart
+
+        self.autostart = QCheckBox("Start GetItDone when I sign in")
+        try:
+            self.autostart.setChecked(autostart.enabled())
+        except OSError:
+            self.autostart.setEnabled(False)
+        self.initial_autostart = self.autostart.isChecked()
+        form.addRow("Startup", self.autostart)
         path = QLineEdit(str(data_path))
         path.setReadOnly(True)
         form.addRow("Task data file", path)
@@ -282,6 +292,10 @@ class SettingsDialog(DismissibleDialog):
                     raise ValueError("Profile IDs must be unique and cannot replace built-in agents.")
                 seen.add(profile["id"])
             directory = prepare_session_folder(self.settings, self.workdir.text())
+            if self.autostart.isChecked() != self.initial_autostart:
+                from app import autostart
+
+                autostart.set_enabled(self.autostart.isChecked())
             self.settings.update(
                 default_workdir=directory, default_agent=self.agent.currentData(), profiles=profiles
             )

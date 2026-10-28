@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QBrush, QColor, QDesktopServices, QPen, QTextDocument
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QKeySequence, QPen, QTextDocument
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QAbstractItemView,
@@ -33,10 +33,48 @@ from app.ui.icons import icon, icon_button
 ROLE = Qt.UserRole
 
 
+class TaskLineEdit(QLineEdit):
+    pasted_lines = Signal(str)
+
+    def paste(self):
+        from PySide6.QtWidgets import QApplication
+
+        text = QApplication.clipboard().text()
+        if "\n" in text or "\r" in text:
+            self.pasted_lines.emit(text)
+        else:
+            super().paste()
+
+    def keyPressEvent(self, event):
+        if event.matches(QKeySequence.Paste):
+            self.paste()
+        else:
+            super().keyPressEvent(event)
+
+    def contextMenuEvent(self, event):
+        menu = self.createStandardContextMenu()
+        for action in menu.actions():
+            if action.text().replace("&", "").split("\t")[0].lower() == "paste":
+                action.triggered.disconnect()
+                action.triggered.connect(self.paste)
+        menu.exec(event.globalPos())
+
+
+class TaskTextEdit(QPlainTextEdit):
+    pasted_lines = Signal(str)
+
+    def insertFromMimeData(self, source):
+        if source.hasText() and ("\n" in source.text() or "\r" in source.text()):
+            self.pasted_lines.emit(source.text())
+        else:
+            super().insertFromMimeData(source)
+
+
 class ItemDelegate(QStyledItemDelegate):
     next_item = Signal(bool, bool)
     escape_pressed = Signal(str)
     text_edited = Signal(str, str)
+    lines_pasted = Signal(str, str)
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -149,14 +187,22 @@ class ItemDelegate(QStyledItemDelegate):
         if index.column() != 0 or index.data(ROLE + 1) != "item":
             return None
         if index.data(ROLE + 5):
-            editor = QPlainTextEdit(parent)
+            editor = TaskTextEdit(parent)
             editor.textChanged.connect(
                 lambda ident=index.data(ROLE): self.text_edited.emit(ident, editor.toPlainText())
             )
         else:
-            editor = super().createEditor(parent, option, index)
+            editor = TaskLineEdit(parent)
+            editor.installEventFilter(self)
             editor.textEdited.connect(lambda text, ident=index.data(ROLE): self.text_edited.emit(ident, text))
         editor.setProperty("taskId", index.data(ROLE))
+        def paste_lines(text):
+            ident = editor.property("taskId")
+            self.commitData.emit(editor)
+            self.closeEditor.emit(editor, QAbstractItemDelegate.NoHint)
+            QTimer.singleShot(0, lambda: self.lines_pasted.emit(ident, text))
+
+        editor.pasted_lines.connect(paste_lines)
         editor.setObjectName("itemTextEditor")
         editor.setFont(index.data(Qt.FontRole))
         background = index.data(ROLE + 2).name()
@@ -344,6 +390,7 @@ class Tasks(QWidget):
         delegate.escape_pressed.connect(self.escape_pressed)
         delegate.next_item.connect(self.editor_next)
         delegate.text_edited.connect(self.edit_text)
+        delegate.lines_pasted.connect(self.paste_lines)
         self.tree.setItemDelegate(delegate)
         self.tree.itemExpanded.connect(lambda row: self.expansion_changed(row, True))
         self.tree.itemCollapsed.connect(lambda row: self.expansion_changed(row, False))
@@ -478,8 +525,8 @@ class Tasks(QWidget):
                     row.setToolTip(0, "Parent context · " + row.toolTip(0))
                 font = row.font(0)
                 font.setStrikeOut(item["done"])
-                font.setBold(depth == 0)
-                font.setPointSize(11 if depth == 0 else 10)
+                font.setBold(False)
+                font.setPixelSize(13)
                 font.setItalic(ident not in direct)
                 row.setFont(0, font)
                 cat = cats.get(item["category_id"])
@@ -704,6 +751,22 @@ class Tasks(QWidget):
 
     def edit_text(self, ident, text):
         self.notebook.update(ident, text=text)
+        self.changed.emit()
+
+    def paste_lines(self, ident, text):
+        item = self.notebook.get(ident)
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if item is None or not lines:
+            return
+        siblings = self.notebook.children(item["parent_id"])
+        position = siblings.index(item)
+        before = siblings[position + 1]["id"] if position + 1 < len(siblings) else None
+        if not item["text"].strip():
+            self.notebook.update(ident, text=lines.pop(0))
+        for line in lines:
+            new = self.notebook.add(line, item["parent_id"])
+            self.notebook.relocate(new["id"], item["parent_id"], before)
+        self.rebuild()
         self.changed.emit()
 
     def dismiss_undo(self, ident):

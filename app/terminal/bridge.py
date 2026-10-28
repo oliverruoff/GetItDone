@@ -95,6 +95,7 @@ class Terminal(QWebEngineView):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.process = None
+        self.dimensions = (100, 28)
         self.unread = False
         self.seen = False
         self.ready_state = False
@@ -146,6 +147,8 @@ class Terminal(QWebEngineView):
 
     @Slot(int, int)
     def resize_terminal(self, cols, rows):
+        if 1 <= cols <= 1000 and 1 <= rows <= 1000:
+            self.dimensions = (cols, rows)
         if self.running and 1 <= cols <= 1000 and 1 <= rows <= 1000:
             try:
                 self.process.resize(cols, rows)
@@ -163,7 +166,7 @@ class Terminal(QWebEngineView):
             from app.terminal.windows import Process
         else:
             from app.terminal.macos import Process
-        self.process = Process(command, cwd)
+        self.process = Process(command, cwd, *self.dimensions)
         self.ending = False
         self.exited = None
         self.reader = threading.Thread(target=self.read_loop, daemon=True)

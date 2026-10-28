@@ -76,6 +76,29 @@ def discover(agent, workdir, home=None):
                     break
                 add("Skill", path, scope, name=path.parent.name)
 
+    def opencode_skills(root, scope):
+        # V2 accepts flat Markdown and directory skills, including symlinked sources.
+        def visit(directory, depth=0, visited=None):
+            visited = set() if visited is None else visited
+            real = directory.resolve()
+            if real in visited or depth > 6 or not directory.is_dir():
+                return
+            visited.add(real)
+            if (directory / "SKILL.md").is_file():
+                add("Skill", directory / "SKILL.md", scope, name=directory.name)
+                return
+            try:
+                for path in sorted(directory.iterdir()):
+                    if path.name.startswith(".") or path.name == "node_modules":
+                        continue
+                    if path.is_dir():
+                        visit(path, depth + 1, visited)
+                    elif depth == 0 and path.suffix.lower() == ".md":
+                        add("Skill", path, scope, name=path.stem)
+            except OSError:
+                pass
+        visit(root)
+
     def config(path, scope, key):
         if not path.is_file():
             return {}
@@ -84,7 +107,10 @@ def discover(agent, workdir, home=None):
                 raise ValueError()
             text = path.read_text()
             data = tomllib.loads(text) if path.suffix == ".toml" else jsonc(text)
-            for name, value in data.get(key, {}).items():
+            servers = data.get(key, {})
+            if key == "mcp" and isinstance(servers, dict):
+                servers = servers.get("servers", servers)
+            for name, value in servers.items():
                 disabled = isinstance(value, dict) and (
                     value.get("enabled") is False or value.get("disabled") is True
                 )
@@ -132,16 +158,27 @@ def discover(agent, workdir, home=None):
     elif agent == "opencode":
         base = Path(os.environ.get("XDG_CONFIG_HOME", str(home / ".config"))) / "opencode"
         instructions(base, ["AGENTS.md"], "Global · OpenCode")
-        skills(base / "skills", "Global · OpenCode")
+        opencode_skills(base / "skills", "Global · OpenCode")
+        for shared in (".claude", ".agents"):
+            opencode_skills(home / shared / "skills", "Global · Shared")
         for root, scope in [
             (base, "Global · OpenCode"),
             *[(p, "Project" if p == workdir else "Inherited") for p in roots],
         ]:
             if root != base:
                 instructions(root, ["AGENTS.md"], scope + " · Shared")
-                skills(root / ".opencode/skills", scope)
-            for name in ["opencode.json", "opencode.jsonc"]:
+                for source in (".opencode", ".claude", ".agents"):
+                    opencode_skills(root / source / "skills", scope)
+            for name in ["opencode.json", "opencode.jsonc", ".opencode/opencode.json", ".opencode/opencode.jsonc"]:
                 data = config(root / name, scope, "mcp")
+                sources = data.get("skills", [])
+                # Also inspect legacy local path configuration without fetching catalogs.
+                if isinstance(sources, dict):
+                    sources = sources.get("paths", [])
+                for source in sources if isinstance(sources, list) else []:
+                    if isinstance(source, str) and not source.startswith(("https:", "http:")):
+                        path = Path(source.replace("~/", str(home) + "/", 1))
+                        opencode_skills(path if path.is_absolute() else workdir / path, scope + " · Configured")
                 for pattern in data.get("instructions", []):
                     if isinstance(pattern, str) and not pattern.startswith(("https:", "http:")):
                         for path in (
@@ -183,6 +220,7 @@ def codex_skills(workdir):
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
         text=True,
+        creationflags=0x08000000 if os.name == "nt" else 0,
     )
     responses = queue.Queue()
 
@@ -272,8 +310,9 @@ def runtime_context(agent, workdir):
         return stamp, findings
     executable = executable_path("opencode")
     try:
-        version = subprocess.run([executable, "--version"], capture_output=True, text=True, timeout=4)
-        if not version.stdout.strip().startswith("2."):
+        version = subprocess.run([executable, "--version"], capture_output=True, text=True, timeout=4,
+                                 creationflags=0x08000000 if os.name == "nt" else 0)
+        if not version.stdout.strip().lower().startswith(("2.", "opencode v2.")):
             return stamp, findings
         for operation, kind in [("skill.list", "Skill"), ("mcp.list", "MCP")]:
             result = subprocess.run(
@@ -281,6 +320,7 @@ def runtime_context(agent, workdir):
                 capture_output=True,
                 text=True,
                 timeout=4,
+                creationflags=0x08000000 if os.name == "nt" else 0,
             )
             if result.returncode:
                 raise ValueError()

@@ -25,6 +25,10 @@ def window(qtbot, tmp_path):
     widget.timer.stop()
     widget.show()
     widget.activateWindow()
+    # QAction shortcut dispatch needs the active Qt window, not just a pending
+    # asynchronous Cocoa activation request from a previously closed test window.
+    QApplication.setActiveWindow(widget)
+    qtbot.waitUntil(widget.isActiveWindow)
     QApplication.processEvents()
     yield widget
     widget.timer.stop()
@@ -164,7 +168,8 @@ def test_todo_shortcut_from_popped_out_terminal(window, qtbot):
     window.toggle_terminal_popout()
     popout = window.terminal_popout
     popout.activateWindow()
-    qtbot.wait(20)
+    QApplication.setActiveWindow(popout)
+    qtbot.waitUntil(popout.isActiveWindow)
     qtbot.keyClick(popout, Qt.Key_T, Qt.ControlModifier)
     assert window.notebook.items[-1]["parent_id"] is None
     qtbot.waitUntil(lambda: window.tasks.tree.findChild(QLineEdit).hasFocus())

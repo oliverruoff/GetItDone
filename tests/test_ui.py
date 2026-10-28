@@ -42,8 +42,9 @@ def test_knowledge_opens_edits_and_saves_without_json_content(qtbot, tmp_path):
     qtbot.waitUntil(lambda: not widget.dirty, timeout=3000)
     assert (tmp_path / "Note.txt").read_text() == "Changed\nSecond line"
     widget.files.setCurrentRow(1)
-    qtbot.waitUntil(lambda: widget.stack.currentWidget() is widget.browser)
-    assert "Heading" in widget.browser.toPlainText()
+    qtbot.waitUntil(lambda: widget.document is not None and widget.document.path.suffix == ".md")
+    assert widget.stack.currentWidget() is widget.editor
+    assert "# Heading" in widget.editor.toPlainText()
     assert set(settings) == {"knowledge_folder", "knowledge_last_file"}
 
 

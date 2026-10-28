@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QEvent, Qt, QTimer, QUrl
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -45,20 +45,7 @@ from app.ui.tasks import Tasks
 
 
 def app_icon():
-    pixmap = QPixmap(64, 64)
-    pixmap.fill(Qt.transparent)
-    painter = QPainter(pixmap)
-    painter.setBrush(QColor("#355d84"))
-    painter.setPen(Qt.NoPen)
-    painter.drawRoundedRect(5, 5, 54, 54, 9, 9)
-    painter.setPen(QColor("white"))
-    font = painter.font()
-    font.setPixelSize(34)
-    font.setBold(True)
-    painter.setFont(font)
-    painter.drawText(pixmap.rect(), Qt.AlignCenter, "✓")
-    painter.end()
-    return QIcon(pixmap)
+    return QIcon(str(Path(__file__).parent / "assets/getitdone.svg"))
 
 
 class Window(QMainWindow):

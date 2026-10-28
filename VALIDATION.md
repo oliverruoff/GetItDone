@@ -1,5 +1,21 @@
 # Prüfstand – 26.10.2026
 
+## Windows-Feedback · 28.10.2026
+
+Umgesetzt: Wissensdateien nach Bestätigung dauerhaft löschen; Name/Änderungsdatum sortieren und Sortierung speichern; TXT-/Markdown-Titel und Inhalt rechts bearbeiten; mehrzeilige Todo-Titel-Pastes als Geschwister anlegen; einheitliche reguläre Todo-Schrift; eigenes SVG/ICO/ICNS-Icon; Autostart bei Benutzeranmeldung; `gid`-Entry-Point mit pipx-/PATH-Anleitung und sicherer Agent-Update-Anleitung in der README.
+
+Terminal: Der bisherige Wert `backend=1` bezeichnet tatsächlich **WinPTY**, nicht ConPTY. Der Windows-Adapter nutzt jetzt `Backend.ConPTY`. Hintergrundabfragen starten unter Windows mit `CREATE_NO_WINDOW`. xterm erhält eine volle Containerhöhe, nachgeführte Größenänderungen, zwischengespeicherte Startdimensionen sowie Shift+PageUp/PageDown bzw. Shift+Mausrad zum Scrollen des verfügbaren Scrollbacks. Fullscreen-/Alternate-Screen-Verlauf innerhalb eines Agents bleibt dessen eigene Funktion.
+
+Skill-Suche: OpenCode-Kompatibilitätsverzeichnisse `.claude/skills`/`.agents/skills`, flache Markdown-Skills, symlinkbasierte Quellen und zusätzliche lokale `skills`-Pfade aus direkten und `.opencode`-Konfigurationen werden berücksichtigt. Die Anzeige bleibt eine Quellen-/Registry-Inspektion, kein Nachweis tatsächlich geladener Skills in einem Modellkontext.
+
+Windows-Benachrichtigungen: neue WinRT-/Windows-Toasts-Anbindung statt Qt-Tray-Balloons, feste AUMID `de.getitdone.notebook`, HKCU-Registrierung mit Anzeigename/Icon und identische Startmenü-Verknüpfung. Die native Einstellung wird vor Versand geprüft; erfolgreiche Übergabe garantiert kein sichtbares Banner. Windows kann den Absender erst nach dem ersten Toast in seinen Einstellungen aufführen. Klickzuordnung ist für die laufende App vorgesehen, kein Neustart per COM-Aktivierungsserver.
+
+**Prüfgrenzen:** Es stand kein Windows-System zur Verfügung. ConPTY-Interaktion mit echtem OpenCode, Toast-Anzeige/-Klick und Benachrichtigungseinstellungen, Installer sowie Autostart nach echtem Ab-/Anmelden müssen dort abgenommen werden. Registrierung und native APIs sind lokal nur über Test-Doubles geprüft. Auch die neuen `gid`-/pipx-Installationsschritte wurden hier nicht in einer frischen Windows-/macOS-Installation ausgeführt.
+
+Der gemeinsame lokale pytest-Lauf unter Python 3.14/Qt 6.12 stürzte bei nativer `QProcess`-Bereinigung mit SIGSEGV ab; ein zusätzlicher Offscreen-Gesamtlauf überschritt das Zeitlimit. Deshalb darf dieser Stand nicht als durchgehend grüner Einprozess-Gesamtlauf gelten. **Abschließender modulweise isolierter Lauf: alle 16 Testmodule erfolgreich, insgesamt 161 Tests bestanden, ein kostenpflichtiger Live-Test übersprungen.** Die GUI-Shortcut-Fixture aktiviert ihr Qt-Fenster explizit, statt nur auf asynchrone Cocoa-Aktivierung zu vertrauen; Qt 6.12 meldet dafür eine DeprecationWarning. Ruff und `git diff --check` sind erfolgreich. Ein separater Quellstart mit isoliertem Datenverzeichnis und `--smoke-terminal` meldet `TERMINAL_SMOKE_OK`.
+
+Die zwölf neuen Regressionstests decken Sortierung, Umbenennen/Kollisionen/externe Änderungen, Markdown-Bearbeitung, Abbruch/Bestätigung beim Dateilöschen, Paste in beide Titel-Editoren, reguläre Schrift, OpenCode-Quellen, ConPTY-Auswahl, Autostart-Registrierung und Windows-Toast-Status/Klickzuordnung ab. Die Terminalprüfung verwendet echtes WebEngine/xterm und prüft Flächennutzung, Größenänderung und Scrollback, nicht nur Quelltext-Muster.
+
 Implementiert aus `productivity-tool-spec-mit-wissensbereich.md`. Die Spec ist unverändert. Diese Datei unterscheidet lokale Testergebnisse von noch nötiger Zielsystem-Abnahme.
 
 ## Lokal automatisiert (macOS, Apple Silicon, Python 3.14.5 / Qt 6.12)

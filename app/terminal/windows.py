@@ -7,9 +7,10 @@ import subprocess
 class Process:
     def __init__(self, command, cwd, cols=100, rows=28):
         from winpty import PtyProcess
+        from winpty.enums import Backend
 
         env = dict(os.environ, TERM="xterm-256color", COLORTERM="truecolor")
-        self.process = PtyProcess.spawn(command, cwd=cwd, env=env, dimensions=(rows, cols), backend=1)
+        self.process = PtyProcess.spawn(command, cwd=cwd, env=env, dimensions=(rows, cols), backend=Backend.ConPTY)
         self.pid = self.process.pid
 
     def read(self):

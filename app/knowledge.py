@@ -39,14 +39,14 @@ def validate_title(title):
     return title
 
 
-def list_documents(folder):
+def list_documents(folder, sort="name"):
     root = Path(folder)
     if not root.is_dir():
         raise DocumentError("The knowledge folder is unavailable. Please select a folder.")
     try:
         return sorted(
             (p for p in root.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED),
-            key=lambda p: (p.stem.casefold(), p.suffix.casefold()),
+            key=lambda p: ((-p.stat().st_mtime if sort == "modified" else 0), p.stem.casefold(), p.suffix.casefold()),
         )
     except OSError as exc:
         raise DocumentError(f"Could not read the folder: {exc}") from exc
@@ -71,6 +71,35 @@ class TextDocument:
     text: str
     fingerprint: str
     encoding: str = "utf-8"
+
+    def rename(self, title):
+        title = validate_title(title)
+        target = self.path.with_name(title + self.path.suffix)
+        if target == self.path:
+            return
+        try:
+            if self.path.is_symlink():
+                raise DocumentError("Rename symbolic links externally.")
+            if any(p != self.path and p.name.casefold() == target.name.casefold()
+                   for p in self.path.parent.iterdir()):
+                raise DocumentError("A file with this name already exists.")
+            if sha256(limited_bytes(self.path)).hexdigest() != self.fingerprint:
+                raise ConflictError("The file has changed externally. Reload before renaming.")
+            if target.exists() and os.path.samefile(self.path, target):
+                # Case-only rename on Windows/default macOS filesystems.
+                self.path.rename(target)
+                self.path = target
+                return
+            # Hard-link creation fails if a concurrent writer creates the destination.
+            os.link(self.path, target)
+            try:
+                self.path.unlink()
+            except OSError:
+                target.unlink()
+                raise
+            self.path = target
+        except OSError as exc:
+            raise DocumentError(f"Could not rename the file: {exc}") from exc
 
     @classmethod
     def open(cls, path):
