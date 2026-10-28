@@ -11,10 +11,5 @@
 
 /tests/manual/notebook/
 
-/RUST/target/
-/RUST/releases/*/GetItDone*
-/RUST/tests/artifacts/
-/RUST/tests/manual/notebook/
-
 __pycache__/
 *.py[cod]

@@ -1,4 +1,0 @@
-Meeting notes
-
-Decision: validate all three coding agents with exact session resume.
-Owner: Oliver
