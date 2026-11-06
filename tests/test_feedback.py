@@ -188,6 +188,7 @@ def test_title_height_tracks_column_width_and_child_indentation(window, qtbot):
     window.tasks.rebuild()
     row = window.tasks.rows[parent["id"]]
     child_row = window.tasks.rows[child["id"]]
+    row.setExpanded(True)
     QApplication.processEvents()
     wide_height = tree.visualItemRect(row).height()
     tree.header().setSectionResizeMode(0, tree.header().ResizeMode.Fixed)

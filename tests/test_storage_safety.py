@@ -144,8 +144,8 @@ def test_change_during_backup_is_not_overwritten(tmp_path, monkeypatch):
     book.add("local")
     write = storage.atomic_write
 
-    def external_change(path, raw):
-        write(path, raw)
+    def external_change(path, raw, **kwargs):
+        write(path, raw, **kwargs)
         if path == store.backup:
             store.path.write_bytes(b"external edit")
 

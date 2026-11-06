@@ -19,6 +19,7 @@ def window(qtbot, tmp_path):
     parent = book.add("Parent")
     child = book.add("Child", parent=parent["id"])
     book.add("Grandchild", parent=child["id"])
+    book.data["settings"]["task_view"] = {"expanded": {i["id"]: True for i in book.items}}
     book.data["settings"]["knowledge_folder"] = str(tmp_path)
     widget = Window(store, book.data)
     qtbot.addWidget(widget)

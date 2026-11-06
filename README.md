@@ -193,7 +193,10 @@ Hover over an icon to see its tooltip.
 | Bell under **Reminder** | Create, change, or remove a reminder |
 | Note icon on the right | Open and edit a note directly below the task |
 | Terminal icon on the right | Create a coding-agent session for this task |
-| **…** | More actions, such as adding a subtask or deleting the task |
+| Copy icon | Copy only this task's original title text |
+| Hierarchy-copy icon | Copy this task and all subtasks as an indented list, including collapsed/completed subtasks |
+| Trash icon on the far right | Delete the task; deleting subtasks or session links asks for confirmation |
+| **…** | More actions, such as adding a subtask |
 
 ## Using colors and notes
 
@@ -205,7 +208,7 @@ The note icon opens a text field directly below the task. Use it for details, qu
 
 ## Completing tasks and undoing changes
 
-Tick the checkbox on the left. In the **Open** view, the completed task disappears; you have five seconds to reverse the action with **Undo**. Later, you can find it under **Completed** or **All** and clear its checkbox.
+Tick the checkbox on the left. Completed tasks stay visible with a crossed-out title in **Open**; you have five seconds to reverse the action with **Undo**, or can clear the checkbox later. Click **Cleanup** beside the filter to hide completed tasks from Open. Cleanup does **not** delete tasks, notes or session links: they remain under **Completed** and **All**, even after restarting. Reopening a task returns it to Open; completing it again keeps it visible until the next Cleanup.
 
 **Completing a parent task also completes its subtasks.** Undo restores their previous completion states. Reopening a subtask also reopens its parent tasks.
 
@@ -226,6 +229,8 @@ GetItDone must be running to deliver a notification. It can keep running in the 
 Use **Help → Test notification** to check delivery. The notification status at the bottom of the window opens guidance and settings. Allow GetItDone notifications in your system settings; focus modes can suppress banners.
 
 On Windows, GetItDone registers its own notification identity and uses native Notification Center toasts rather than tray balloons. Start the updated app and send a test notification, then open **Settings → System → Notifications → GetItDone** and enable notifications and banners. Windows may not list a sender until its first notification. If missing, check the in-app notification status for registration/dependency errors, and reinstall the current installer or refresh source dependencies. Check global notifications, Do Not Disturb and organizational policies too. GetItDone cannot override a denied system setting.
+
+Some Windows source installations report “Element not found” when querying notification settings even though sending works; GetItDone still attempts native delivery in that specific case. Explicitly disabled settings and other errors remain visible. Failed reminders are retried after one minute while the app keeps running, without sending a notification every second. A successful submission confirms OS acceptance, not that focus mode allowed a banner.
 
 ## Keeping knowledge and documents close at hand
 
@@ -299,7 +304,7 @@ Click the task you want to work with first. These shortcuts apply in the task li
 
 From any tab (or a popped-out terminal), **Command+T** on macOS / **Ctrl+T** on Windows adds a parent todo at the bottom and focuses its text. **Command/Ctrl+N** opens Knowledge and a new note with the cursor in its content. The editable title defaults to `Note_YYYY-MM-DD_HH-MM`; select `.txt` (default) or `.md`. **Enter** saves the new note; **Shift+Enter** inserts a line break. See **Help → Keyboard shortcuts** for the complete list.
 
-Use the two icon buttons beside the task filter to expand or collapse everything. Individual expansion states and full-title/note visibility save immediately. Expanded items contain a compact **+** for adding children; collapsed parents occupy one row.
+Use the expand/collapse icon beside the task filter to expand or collapse everything. New tasks start **collapsed**. Individual expansion states and full-title/note visibility save immediately. Expanded items contain a **+** row for adding children; the entire row is clickable. Collapsed parents occupy one row. Opening a note expands its task so the editor is immediately visible.
 
 The fourth tab, **Scheduled tasks**, manages one-time and recurring agent runs. Choose the prompt, agent, working folder, local date/time and an interval in minutes, hours, days, weeks or months. Use **+ New scheduled task** below the schedule list to create a job. Each schedule shows its state, next date and run count. Select it to edit, run now, pause or delete it. The **Run history** table lists every execution with its number, local start/end times, duration and status, alongside total/success/failure counts. Select any run to read or copy its own saved output below. Task details show the current prompt/folder; **Run details** shows the original prompt/folder used for that execution. Reading output does not start the agent. **Schedule again** opens the date editor for a finished one-time job. Codex replies are displayed as text; select **Raw process output** for diagnostics. Each run retains the last 1 MB of output locally, including across restarts. Ordinary interactive terminal output still remains in memory only.
 
@@ -322,6 +327,8 @@ Enable **Settings → Startup → Start GetItDone when I sign in** for automatic
 Tasks, task notes, colors, reminders, and session links are stored locally. **Settings** shows the exact storage location. Knowledge files remain separate in the folder you selected. There is no automatic synchronization between computers.
 
 Every save writes and flushes a temporary file before atomically replacing `notebook.json`. The app keeps up to three backup generations alongside it: `notebook.backup.json`, `notebook.backup.2.json`, and `notebook.backup.3.json`. The first save also creates a backup; unchanged saves do not rotate history. On macOS/Linux the containing directory is flushed too.
+
+Short Windows access/sharing locks (for example from antivirus or indexing) are retried up to six times, with less than a second of total delay per file. Persistent failures still show a save error and keep your edits in memory. External changes are checked again before each main-file replacement attempt; no permissions are changed and the existing file is never deleted to bypass a lock.
 
 If the main file is missing or damaged, the app recovers the newest valid backup and displays a warning: changes after that backup may be missing. A damaged original is preserved as `notebook.damaged-<unique-id>.json`. If no valid backup exists, opening stops without creating an empty replacement. Files from an unsupported notebook version are preserved without automatic downgrade. If another program changes or deletes the notebook while it is open, saving stops and your edits remain in memory; preserve the data folder before reopening.
 

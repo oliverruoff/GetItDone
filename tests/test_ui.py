@@ -183,6 +183,8 @@ def test_completion_confirmation_does_not_stop_agent(qtbot, tmp_path, monkeypatc
     monkeypatch.setattr("app.ui.window.confirm", lambda *args: True)
     window.complete(item["id"], True)
     assert item["done"] and terminal.running
+    assert item["id"] in window.tasks.rows
+    window.tasks.cleanup_completed()
     assert item["id"] not in window.tasks.rows
     # Deleting the persistent link also leaves the process in its tab.
     window.notebook.delete(item["id"])

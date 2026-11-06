@@ -100,6 +100,9 @@ def test_create_categorize_render_save_and_complete(qtbot, workflow):
         pos=rect.topLeft() + QPoint(15, rect.height() // 2),
     )
     qtbot.waitUntil(lambda: item["done"])
+    assert item["id"] in window.tasks.rows
+    assert window.tasks.rows[item["id"]].font(0).strikeOut()
+    qtbot.mouseClick(window.tasks.cleanup_button, Qt.LeftButton)
     assert item["id"] not in window.tasks.rows
     window.tasks.status.setCurrentIndex(window.tasks.status.findData("done"))
     assert item["id"] in window.tasks.rows
@@ -239,7 +242,7 @@ def test_live_opencode_prompt_busy_response_and_acknowledge(qtbot, workflow):
     assert "GETITDONE_E2E_OK" not in window.store.path.read_text()
 
 
-def test_completion_animates_and_undo_restores_original_item(qtbot, workflow):
+def test_completion_stays_visible_and_undo_restores_original_item(qtbot, workflow):
     window, category = workflow
     item = create_and_categorize(qtbot, window, category)
     window.notebook.update(item["id"], notes="Note bleibt erhalten")
@@ -252,12 +255,10 @@ def test_completion_animates_and_undo_restores_original_item(qtbot, workflow):
         pos=rect.topLeft() + QPoint(15, rect.height() // 2),
     )
     qtbot.waitUntil(lambda: item["done"])
-    assert item["id"] not in window.tasks.rows
-    assert window.tasks.completion_overlay is not None
-    overlay = window.tasks.completion_overlay
-    qtbot.waitUntil(lambda: overlay.progress > 0)
+    assert item["id"] in window.tasks.rows
+    assert window.tasks.rows[item["id"]].font(0).strikeOut()
+    assert window.tasks.completion_overlay is None
     assert window.tasks.undo_notices[item["id"]].isVisible()
-    qtbot.waitUntil(lambda: window.tasks.completion_overlay is None)
     notice = window.tasks.undo_notices[item["id"]]
     qtbot.mouseClick(notice.findChild(QPushButton), Qt.LeftButton)
     qtbot.waitUntil(lambda: not item["done"])

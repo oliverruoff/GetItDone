@@ -1,8 +1,10 @@
 """Atomic notebook storage with validated backups and lossless recovery archives."""
 
 import json
+import logging
 import os
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -125,7 +127,7 @@ def validate(data):
     if (not isinstance(view, dict)
             or any(not isinstance(view.get(key, []), list)
                    or any(not isinstance(ident, str) for ident in view.get(key, []))
-                   for key in ("titles", "notes", "hidden_notes"))
+                    for key in ("titles", "notes", "hidden_notes", "cleaned_completed"))
             or not isinstance(view.get("expanded", {}), dict)
             or any(not isinstance(k, str) or type(v) is not bool
                    for k, v in view.get("expanded", {}).items())):
@@ -178,7 +180,7 @@ def validate(data):
     return data
 
 
-def atomic_write(path, raw):
+def atomic_write(path, raw, before_replace=None):
     """Flush the file before replace and the directory afterwards (POSIX)."""
     temp = None
     try:
@@ -187,7 +189,18 @@ def atomic_write(path, raw):
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temp, path)
+        for attempt in range(6):
+            if before_replace is not None:
+                before_replace()
+            try:
+                os.replace(temp, path)
+                break
+            except OSError as exc:
+                # Antivirus/indexers can briefly open JSON files without delete sharing.
+                # Retry only Windows access/sharing locks; never change ACLs or delete the target.
+                if getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == 5:
+                    raise
+                time.sleep(0.025 * 2 ** attempt)
         temp = None
         if os.name != "nt":
             directory = os.open(path.parent, os.O_RDONLY)
@@ -197,7 +210,10 @@ def atomic_write(path, raw):
                 os.close(directory)
     finally:
         if temp:
-            Path(temp).unlink(missing_ok=True)
+            try:
+                Path(temp).unlink(missing_ok=True)
+            except OSError:
+                logging.getLogger(__name__).warning("Could not remove temporary notebook file %s", temp)
 
 
 def decode(raw):
@@ -299,7 +315,11 @@ class Store:
             if self.current_bytes() != previous:
                 raise StorageError("The notebook changed while saving. Saving stopped; edits remain in memory.")
             try:
-                atomic_write(self.path, raw)
+                def check_primary():
+                    if self.current_bytes() != previous:
+                        raise StorageError("The notebook changed while saving. Saving stopped; edits remain in memory.")
+
+                atomic_write(self.path, raw, before_replace=check_primary)
             except OSError:
                 # A directory fsync can fail after replace: permit a safe retry of our own write.
                 if self.current_bytes() == raw:

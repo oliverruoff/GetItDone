@@ -274,6 +274,7 @@ class ItemDelegate(QStyledItemDelegate):
 
 class TaskTree(QTreeWidget):
     dropped = Signal(str, object, object)
+    add_child_requested = Signal(str)
     new_requested = Signal()
     indent_requested = Signal(bool)
 
@@ -483,6 +484,14 @@ class TaskTree(QTreeWidget):
             return False
         return super().focusNextPrevChild(next)
 
+    def mouseReleaseEvent(self, event):
+        row = self.itemAt(event.position().toPoint())
+        if event.button() == Qt.LeftButton and row is not None and row.data(0, ROLE + 1) == "add":
+            self.add_child_requested.emit(row.parent().data(0, ROLE))
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
 
 class Tasks(QWidget):
     undo_expired = Signal(str)
@@ -527,11 +536,17 @@ class Tasks(QWidget):
         for title, value in [("Open", "open"), ("Completed", "done"), ("All", "all")]:
             self.status.addItem(title, value)
         self.status.currentIndexChanged.connect(self.rebuild)
+        self.status.setToolTip("Open includes completed items until Cleanup; Completed and All keep every item.")
         filterbar.addWidget(self.search, 1)
         filterbar.addWidget(self.status)
         layout.addLayout(filterbar)
         self.expansion_button = icon_button("collapse", "Collapse all", self.toggle_all_expanded)
         filterbar.addWidget(self.expansion_button)
+        self.cleanup_button = QPushButton(icon("cleanup"), "Cleanup")
+        self.cleanup_button.setAccessibleName("Cleanup completed items")
+        self.cleanup_button.setToolTip("Hide completed items from Open; keep them in Completed and All")
+        self.cleanup_button.clicked.connect(self.cleanup_completed)
+        filterbar.addWidget(self.cleanup_button)
         self.tree = TaskTree()
         self.tree.setObjectName("taskTree")
         self.tree.setHeaderLabels(["Todos", "Color", "Reminder", "Agent status", "Actions"])
@@ -539,7 +554,7 @@ class Tasks(QWidget):
         self.tree.setColumnWidth(1, 56)
         self.tree.setColumnWidth(2, 125)
         self.tree.setColumnWidth(3, 100)
-        self.tree.setColumnWidth(4, 185)
+        self.tree.setColumnWidth(4, 200)
         self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tree.header().setStretchLastSection(False)
         self.tree.header().sectionResized.connect(lambda *_: self.tree.scheduleDelayedItemsLayout())
@@ -553,6 +568,7 @@ class Tasks(QWidget):
         self.tree.setDefaultDropAction(Qt.MoveAction)
         self.tree.setDropIndicatorShown(False)
         self.tree.dropped.connect(self.drop_item)
+        self.tree.add_child_requested.connect(lambda ident: self.action_requested.emit(ident, "child"))
         self.tree.itemClicked.connect(self.status_clicked)
         delegate = ItemDelegate(self.tree)
         delegate.escape_pressed.connect(self.escape_pressed)
@@ -611,6 +627,33 @@ class Tasks(QWidget):
         row.setData(0, ROLE + 5, ident in self.titles_open)
         self.tree.scheduleDelayedItemsLayout()
         self.save_view()
+
+    def cleanup_completed(self):
+        self.notebook.cleanup_completed()
+        for ident in list(self.undo_notices):
+            if not ident.startswith("note:"):
+                self.expire_undo(ident)
+        self.rebuild()
+        self.changed.emit()
+
+    def copy_item(self, ident, subtree=False):
+        item = self.notebook.get(ident)
+        if item is None:
+            return
+        if not subtree:
+            text = item["text"]
+        else:
+            lines = []
+
+            def append(task, depth):
+                prefix = "  " * depth
+                lines.append(prefix + "- " + task["text"].replace("\n", "\n" + prefix + "  "))
+                for child in self.notebook.children(task["id"]):
+                    append(child, depth + 1)
+
+            append(item, 0)
+            text = "\n".join(lines)
+        QApplication.clipboard().setText(text)
 
     def save_view(self):
         self.view_state.update(titles=sorted(self.titles_open), notes=sorted(self.notes_open),
@@ -742,6 +785,8 @@ class Tasks(QWidget):
                 for name, title, callback in [
                     ("note", "Edit note", lambda checked=False, i=ident: self.toggle_note(i)),
                     ("session", "New session", lambda checked=False, i=ident: self.start_at(i)),
+                    ("copy", "Copy item text", lambda checked=False, i=ident: self.copy_item(i)),
+                    ("copy-tree", "Copy item and all subtasks", lambda checked=False, i=ident: self.copy_item(i, True)),
                 ]:
                     button = icon_button(name, title, callback, foreground)
                     button.setFixedSize(28, 24)
@@ -751,6 +796,10 @@ class Tasks(QWidget):
                 )
                 more.setFixedSize(28, 24)
                 action_layout.addWidget(more)
+                trash = icon_button("trash", "Delete item", lambda checked=False, i=ident:
+                                    self.action_requested.emit(i, "delete"), foreground)
+                trash.setFixedSize(28, 24)
+                action_layout.addWidget(trash)
                 if tint:
                     # Cell widgets otherwise cover the item's category background.
                     actions.setObjectName("taskActions")
@@ -802,17 +851,18 @@ class Tasks(QWidget):
                 plus_row.setFirstColumnSpanned(True)
                 plus_row.setSizeHint(0, QSize(100, 20))
                 plus = icon_button("plus", "Add child item", lambda checked=False, i=ident:
-                                   self.action_requested.emit(i, "child"))
-                plus.setFixedSize(24, 20)
+                                    self.action_requested.emit(i, "child"))
+                plus.setFixedHeight(20)
+                plus.setMinimumWidth(24)
+                plus.setMaximumWidth(16777215)
                 plus.setStyleSheet("QPushButton { border: none; background: transparent; padding: 1px; }"
                                   "QPushButton:hover { background: #e8edf5; }")
                 strip = QWidget()
                 strip_layout = QHBoxLayout(strip)
                 strip_layout.setContentsMargins(0, 0, 0, 0)
                 strip_layout.addWidget(plus)
-                strip_layout.addStretch()
                 self.tree.setItemWidget(plus_row, 0, strip)
-                row.setExpanded(self.view_state.get("expanded", {}).get(ident, True))
+                row.setExpanded(self.view_state.get("expanded", {}).get(ident, False))
 
         add(None)
         if selected in self.rows:
@@ -820,6 +870,8 @@ class Tasks(QWidget):
         self.tree.blockSignals(False)
         self.building = False
         self.update_expansion_button()
+        cleaned = set(self.view_state.get("cleaned_completed", []))
+        self.cleanup_button.setEnabled(any(i["done"] and i["id"] not in cleaned for i in self.notebook.items))
         self.tree.verticalScrollBar().setValue(scroll)
         self.summary.setText(
             f"{len(direct)} matches · {sum(not i['done'] for i in self.notebook.items)} open · {len(self.notebook.items)} items total"
@@ -1068,7 +1120,9 @@ class Tasks(QWidget):
         item = self.notebook.get(ident)
         done = row.checkState(0) == Qt.Checked
         if done != item["done"]:
-            self.completion_requested.emit(ident, done)
+            # Rebuild only after Qt finishes updating this row; deleting it inside
+            # itemChanged can cause a native access violation on Windows.
+            QTimer.singleShot(0, lambda: self.completion_requested.emit(ident, done))
         elif row.text(0) != item["text"]:
             self.notebook.update(ident, text=row.text(0))
             self.changed.emit()
@@ -1100,6 +1154,7 @@ class Tasks(QWidget):
         else:
             self.notes_open.add(ident)
             self.notes_hidden.discard(ident)
+            self.view_state.setdefault("expanded", {})[ident] = True
         self.rebuild(select=ident)
         self.save_view()
 

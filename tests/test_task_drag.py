@@ -17,6 +17,7 @@ def tasks(qtbot):
     book.add("Child", parent=parent["id"])
     book.add("Second")
     book.add("Third")
+    book.data["settings"]["task_view"] = {"expanded": {i["id"]: True for i in book.items}}
     widget = Tasks(book, {})
     qtbot.addWidget(widget)
     widget.resize(1000, 600)

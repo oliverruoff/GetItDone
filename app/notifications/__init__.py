@@ -120,6 +120,10 @@ class Notifier(QObject):
             else "unknown"
         )
 
+    def close(self):
+        if self.windows:
+            self.windows.close()
+
     def send(self, item):
         self.last_item = item["id"]
         if sys.platform == "win32":
@@ -127,6 +131,7 @@ class Notifier(QObject):
                 if not self.windows:
                     raise OSError(self.status)
                 self.windows.send(item, self.activated.emit, self.native_result.emit)
+                self.status_changed.emit("Submitted to Windows Notification Center; focus mode may suppress banners.")
                 self.native_result.emit(item["id"], True, "Submitted to Windows Notification Center; focus mode may suppress banners.")
             except Exception as exc:
                 self.status_changed.emit(str(exc))

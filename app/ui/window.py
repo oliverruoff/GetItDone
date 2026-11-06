@@ -281,6 +281,11 @@ class Window(QMainWindow):
 
     def notification_result(self, ident, accepted, message):
         if not accepted:
+            pending = getattr(self, "pending_notifications", {})
+            at = pending.pop(ident, None)
+            if at is not None and self.reminders.failed(ident, at):
+                self.schedule_save()
+            self.notifier.status_changed.emit(message)
             self.statusBar().showMessage("System notification not sent: " + message)
         else:
             self.statusBar().showMessage(message, 5000)
@@ -465,7 +470,7 @@ class Window(QMainWindow):
                 if not confirm(
                     self,
                     "Running sessions",
-                    "This item will be hidden from the open list. Its sessions will keep running. Complete it?",
+                    "Its sessions will keep running after completion and Cleanup. Complete it?",
                 ):
                     self.tasks.rebuild(select=ident)
                     return
@@ -1144,6 +1149,9 @@ class Window(QMainWindow):
             # Persist once-only marker before asking the OS to display anything.
             if self.flush():
                 for item in due:
+                    if not hasattr(self, "pending_notifications"):
+                        self.pending_notifications = {}
+                    self.pending_notifications[item["id"]] = item["reminder"]["at"]
                     self.notifier.send(item)
             else:
                 for item in due:
@@ -1296,4 +1304,5 @@ class Window(QMainWindow):
         # close handlers can veto it even after all sessions were stopped,
         # leaving a disabled, invisible instance holding the notebook lock.
         # Saving and process cleanup have succeeded: leave the loop directly.
+        self.notifier.close()
         QApplication.instance().exit(0)

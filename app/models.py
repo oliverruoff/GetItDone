@@ -88,6 +88,7 @@ class Notebook:
             [self.get(ident), *self.descendants(ident)] if done else [self.get(ident), *self.ancestors(ident)]
         )
         before = {item["id"]: item["done"] for item in affected if item is not None}
+        self.unhide_completed(before)
         for item in affected:
             if item is not None:
                 self.update(item["id"], done=done)
@@ -97,6 +98,7 @@ class Notebook:
         return before
 
     def restore_completion(self, snapshot):
+        self.unhide_completed(snapshot)
         for ident, done in snapshot.items():
             self.update(ident, done=done)
         for ident, done in snapshot.items():
@@ -184,13 +186,25 @@ class Notebook:
             if item["category_id"] == ident:
                 self.update(item["id"], category_id=None)
 
+    def unhide_completed(self, identifiers):
+        view = self.data["settings"].get("task_view", {})
+        if "cleaned_completed" in view:
+            view["cleaned_completed"] = sorted(set(view["cleaned_completed"]) - set(identifiers))
+
+    def cleanup_completed(self):
+        """Hide completed items in Open without deleting tasks, notes or session links."""
+        view = self.data["settings"].setdefault("task_view", {})
+        view["cleaned_completed"] = sorted(i["id"] for i in self.items if i["done"])
+
     def visible(self, query="", status="open", category=None):
         query = query.casefold()
+        cleaned = set(self.data["settings"].get("task_view", {}).get("cleaned_completed", []))
         direct = {
             i["id"]
             for i in self.items
             if (not query or query in (i["text"] + "\n" + i["notes"]).casefold())
-            and (status == "all" or i["done"] == (status == "done"))
+            and (status == "all" or (i["done"] if status == "done" else
+                                     not i["done"] or i["id"] not in cleaned))
             and (not category or i["category_id"] == category)
         }
         visible = set(direct)

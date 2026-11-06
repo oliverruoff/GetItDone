@@ -192,6 +192,7 @@ def test_windows_toast_identity_delivery_blocked_and_click(monkeypatch):
     setting = SimpleNamespace(setting="enabled")
     toaster = SimpleNamespace(toastNotifier=setting, show_toast=shown.append)
     monkeypatch.setattr(windows, "register", lambda: registered.append(True))
+    monkeypatch.setattr(windows, "create_toaster", lambda: toaster)
     monkeypatch.setitem(
         sys.modules,
         "windows_toasts",

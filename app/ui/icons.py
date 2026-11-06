@@ -25,6 +25,8 @@ PATHS = {
     "save": '<path d="M4 3h13l3 3v15H4zM8 3v6h8V3M8 21v-8h8v8"/>',
     "external": '<path d="M14 3h7v7M21 3l-11 11M10 4H3v17h17v-7"/>',
     "copy": '<rect x="8" y="8" width="13" height="13" rx="1"/><path d="M16 8V3H3v13h5"/>',
+    "copy-tree": '<rect x="3" y="3" width="7" height="5" rx="1"/><path d="M6 8v11h6M6 13h6"/><rect x="12" y="10" width="9" height="5" rx="1"/><rect x="12" y="17" width="9" height="5" rx="1"/>',
+    "cleanup": '<path d="m14 3 7 7-9 11H3v-9zM6 9l9 9M3 16l5 5M17 3l4-2"/>',
     "paste": '<path d="M8 5H4v16h16V5h-4M8 3h8v5H8z"/>',
 }
 
