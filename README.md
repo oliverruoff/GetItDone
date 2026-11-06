@@ -16,29 +16,131 @@ Installers from successful builds are available as [GitHub Actions artifacts](ht
 
 ### Installation by a coding agent (including `gid`)
 
-Ask your agent to install Git and Python 3.12+ if needed, then follow the platform commands below. Do not use an administrator shell. The editable installation connects `gid` to the clone; keep that folder at a stable location.
+The recommended setup is **one editable pipx installation**. It creates the `gid` command from `pyproject.toml` and connects it to a stable checkout. No shell alias, activated environment, administrator shell, or global `pip install` is needed. Use Python 3.12+ for this documented setup. The development extras include PyInstaller, which the macOS launcher needs to build its app bundle.
 
-**macOS (Terminal, iTerm, zsh, bash, fish):** install pipx using `brew install pipx` (requires Homebrew), then:
+#### Agent checklist: inspect before changing anything
+
+1. Check the OS, shell, Git and Python versions, and the intended checkout path. Reuse an existing checkout; inspect `git status --short` before updating it. Do not move it after an editable installation.
+2. Find **all** existing commands named `gid`: `Get-Command gid -All` and `where.exe gid` in PowerShell; `type -a gid` in bash/zsh; `type -a gid` in fish. Inspect any existing script before replacing it. An old alias, function, `gid.cmd`, or another installation can shadow the correct command.
+3. Choose **pipx or the `.venv` wrapper below**, not both. Check `pipx list` (Windows: `py -m pipx list`) before installing. Preserve working launchers and unrelated PATH entries. Obtain permission before installing system prerequisites or replacing another command.
+4. Verify from a **new terminal and a directory outside the checkout**, including a second launch. Do not declare success just because installation finished.
+
+#### Recommended: macOS
+
+With Homebrew already installed, install the prerequisites if missing:
 
 ```sh
-git clone https://github.com/oliverruoff/GetItDone.git
-cd GetItDone
+brew install git python@3.12 pipx
+mkdir -p "$HOME/Documents/develop"
+git clone https://github.com/oliverruoff/GetItDone.git "$HOME/Documents/develop/GetItDone"
+cd "$HOME/Documents/develop/GetItDone"
 pipx ensurepath
-pipx install --editable '.[dev]'
+pipx install --python "$(brew --prefix python@3.12)/bin/python3.12" --editable '.[dev]'
 ```
 
-**Windows (PowerShell, cmd, Windows Terminal, Git Bash):** install pipx with `py -m pip install --user pipx`, then run these commands in PowerShell or cmd:
+Skip cloning if this checkout already exists. Close and reopen Terminal/iTerm after `ensurepath`. The first launch builds the notification-capable app bundle; subsequent launches reuse it. These commands are bash/zsh syntax; fish users can perform installation in `bash`, then run `gid` from fish after restarting it.
 
-```text
-git clone https://github.com/oliverruoff/GetItDone.git
-cd GetItDone
-py -m pipx ensurepath
-py -m pipx install --editable ".[dev]"
+#### Recommended: Windows
+
+Use a normal **PowerShell** session with Git and Python 3.12+ installed. The following selects Python 3.12 explicitly; adjust the selector if using another supported version:
+
+```powershell
+py -3.12 -m pip install --user pipx
+New-Item -ItemType Directory -Force "$HOME\Documents\develop" | Out-Null
+git clone https://github.com/oliverruoff/GetItDone.git "$HOME\Documents\develop\GetItDone"
+Set-Location "$HOME\Documents\develop\GetItDone"
+py -3.12 -m pipx ensurepath
+py -3.12 -m pipx install --python (py -3.12 -c "import sys; print(sys.executable)") --editable ".[dev]"
 ```
 
-Close and reopen the terminal application to refresh PATH, then run **`gid`** from any directory. This is an installed executable (`gid.exe` on Windows), not a shell alias; no virtual-environment activation is required. `pipx ensurepath` adds pipx's command directory to the user PATH. Shells with a custom PATH must preserve that directory. Verify with `command -v gid` (macOS/Git Bash), `Get-Command gid` (PowerShell), or `where gid` (cmd). WSL has a separate Linux environment. Linux source installations can use the same pipx editable install, but Linux desktop behavior is not part of verified macOS/Windows support.
+Skip cloning an existing checkout. **Close the entire terminal application and reopen it** so the new user PATH is inherited; opening another tab in an old Windows Terminal may retain the old PATH. Run `Get-Command gid -All` again: the selected command must belong to this setup, not an older wrapper or PowerShell function. The installed console command is `gid.exe`; the GUI entry point is `getitdone.exe`.
 
-The first macOS launch builds the app bundle needed for notifications. Agent CLIs such as OpenCode must still be installed and authenticated separately. The packaged Windows installer does not install Python or `gid`; use the source procedure above when `gid` is required.
+#### Recommended: Linux (source setup; desktop support is experimental)
+
+Use a graphical desktop session, not a headless server. Install Git, Python 3.12+, venv support and pipx with your distribution's package manager, with permission for system changes. For example, **Ubuntu 24.04** provides these prerequisites:
+
+```sh
+sudo apt-get update
+sudo apt-get install git python3 python3-venv pipx
+python3 --version
+mkdir -p "$HOME/Documents/develop"
+git clone https://github.com/oliverruoff/GetItDone.git "$HOME/Documents/develop/GetItDone"
+cd "$HOME/Documents/develop/GetItDone"
+pipx ensurepath
+pipx install --python python3 --editable '.[dev]'
+```
+
+Skip cloning an existing checkout. Older distributions may need a separate Python 3.12+ installation; do not replace their system Python. Qt also needs your distribution's graphical runtime libraries. If startup reports a missing Qt platform plugin/library, diagnose that dependency rather than setting `QT_QPA_PLATFORM=offscreen` for normal use. Linux desktop, terminal and notification behavior is **not covered by the macOS/Windows support guarantee**. WSL is a separate installation and requires a working graphical environment (for example WSLg).
+
+#### Alternative: reuse a local `.venv` with a persistent launcher
+
+Use this instead of pipx if an agent has already installed the checkout into `.venv`. Refresh that environment with its own Python; never require users to activate it each time:
+
+```powershell
+# Windows, from the checkout; create the environment only if missing.
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --editable ".[dev]"
+```
+
+```sh
+# macOS / Linux, from the checkout; select an installed Python 3.12+.
+python3.12 -m venv .venv
+.venv/bin/python -m pip install --editable '.[dev]'
+```
+
+**Windows launcher:** the following PowerShell example creates a user-local `gid.cmd`, adds only its directory to the user PATH, and leaves existing PATH entries intact. Adjust `$repo` to the actual checkout. First resolve any conflicting command from the checklist; do not overwrite someone else's launcher.
+
+```powershell
+$repo = (Resolve-Path "$HOME\Documents\develop\GetItDone").Path
+$bin = Join-Path $env:LOCALAPPDATA "GetItDone\bin"
+$launcher = Join-Path $bin "gid.cmd"
+if (Test-Path $launcher) { throw "Inspect the existing launcher before updating it: $launcher" }
+if (-not (Test-Path "$repo\.venv\Scripts\getitdone.exe")) { throw "Install the checkout into .venv first" }
+New-Item -ItemType Directory -Force $bin | Out-Null
+$content = @'
+@echo off
+chcp 65001 >nul
+if not exist "__CHECKOUT__\.venv\Scripts\getitdone.exe" (
+    echo GetItDone installation not found. Check the checkout and .venv.
+    exit /b 1
+)
+start "" /D "__CHECKOUT__" "__CHECKOUT__\.venv\Scripts\getitdone.exe" %*
+'@
+$content = $content.Replace('__CHECKOUT__', $repo)
+[IO.File]::WriteAllText($launcher, $content, (New-Object Text.UTF8Encoding($false)))
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if (($userPath -split ';') -notcontains $bin) {
+    [Environment]::SetEnvironmentVariable("Path", "$bin;$userPath", "User")
+}
+$env:Path = "$bin;$env:Path"
+```
+
+`start ""` is intentional: the empty first quoted argument is the window title, not the executable. Quoting both paths supports spaces. `%*` forwards arguments such as `--data-dir`; `/D` sets a predictable working directory. This starts the GUI without keeping PowerShell occupied. The script writes UTF-8 without a BOM and selects code page 65001, including on Windows PowerShell 5.1, so non-ASCII checkout paths are supported.
+
+**macOS / Linux launcher:** create `~/.local/bin/gid` with the following contents, adapting `REPO` if necessary. Do not overwrite an existing file without inspecting it:
+
+```sh
+#!/bin/sh
+REPO="$HOME/Documents/develop/GetItDone"
+if [ ! -x "$REPO/.venv/bin/gid" ]; then
+    echo "GetItDone installation not found; check the checkout and .venv." >&2
+    exit 1
+fi
+cd "$REPO" || exit 1
+exec "$REPO/.venv/bin/gid" "$@"
+```
+
+Create `~/.local/bin` if missing and run `chmod +x ~/.local/bin/gid`. If it is not already on PATH, add `export PATH="$HOME/.local/bin:$PATH"` once to the appropriate bash/zsh startup file; for fish use `fish_add_path "$HOME/.local/bin"`. Never replace the entire PATH. The wrapper must call the **absolute environment entry point**, not bare `gid` (which would recurse). macOS launches its bundle; on Linux the foreground command stays attached to the desktop process until it exits.
+
+#### Verification and troubleshooting (all setups)
+
+- In a fresh shell, verify resolution: `Get-Command gid -All` / `where.exe gid` on Windows, or `type -a gid` on macOS/Linux. Compare the path to the chosen pipx installation or wrapper. For wrappers, use the underlying environment entry point for `--version`: the detached Windows wrapper does not return console output.
+- Run `gid` **outside the repository**. The notebook must open without environment activation. Check the build revision in its title, then run `gid` again: the same notebook should be activated, with no automatic shutdown or second instance.
+- Closing the main window can leave the notebook running in the tray. To load updates, use **File → Quit**, wait for shutdown, then run `gid` again. `gid --replace-running` explicitly requests a safe restart and confirmation before stopping active agents; do not make it the default launcher behavior.
+- If a start reports that the previous instance has not finished shutting down, do not repeatedly launch copies, delete `instance.lock`, or kill every Python process. Inspect the existing instance and preserve its data. Any forced shutdown needs explicit approval because unsaved edits and running agents may be lost.
+- If `gid` is missing, fix the user PATH or the selected environment's installation. If it selects old code, inspect shadowing commands and editable-install paths before reinstalling. Do not use `pipx --force`, delete environments, or overwrite shell profiles blindly.
+
+Agent CLIs such as OpenCode need their own installation and sign-in. The packaged Windows installer does not install Python or `gid`. The Windows wrapper and repeated-launch behavior have been tested locally; macOS/Linux commands are setup guidance, not a claim that those fresh installations were tested here.
 
 ### Updates by a coding agent
 
