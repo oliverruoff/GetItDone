@@ -64,9 +64,13 @@ Paste multiline text into a task title to create one todo per nonempty line at t
 
 ## Editing and organizing tasks
 
-**Double-click the text** to edit it directly in the row. Alternatively, click a task and press **F2**. For long titles, the vertical arrows icon reveals the full text; expanded titles support multiline editing with **Shift+Enter**. **Escape** discards an empty new task; existing task edits are saved.
+**Double-click the text** to edit it directly in the row. Alternatively, click a task and press **F2**. Long titles wrap automatically, and each row grows to show the full text, including line breaks. Row heights adjust when you resize the window. **Escape** discards an empty new task; existing task edits are saved.
+
+Long hyperlinks show the first 20 and last 20 characters, separated by `...`. Left-click opens the complete URL; right-click copies it to the clipboard with a brief confirmation. The original text remains available when editing or hovering over the task.
 
 To move a task, drag it to its new position:
+
+A highlighted placeholder makes room at the prospective drop position while you hold the task. Dropping onto a task shows an indented child preview; dropping near a row's top or bottom edge inserts a sibling.
 
 - **Drop between two rows:** Insert the task at that position. The insertion marker shows where it will go.
 - **Drop onto another task:** Make the dragged task a subtask of that task.
@@ -88,7 +92,6 @@ Hover over an icon to see its tooltip.
 | Note icon on the right | Open and edit a note directly below the task |
 | Terminal icon on the right | Create a coding-agent session for this task |
 | **…** | More actions, such as adding a subtask or deleting the task |
-| Vertical arrows on the right | Expand a long task title or collapse it again |
 
 ## Using colors and notes
 
@@ -113,6 +116,8 @@ Tick the checkbox on the left. In the **Open** view, the completed task disappea
 <img src="docs/images/reminder.png" alt="Reminder dialog with date, time, Save, and Remove reminder" width="640">
 
 Click the bell again to change the reminder. **Remove reminder** clears it.
+
+Use **In 15 min**, **In 1 hour**, or **Tomorrow 09:00** for a quick reminder. For a custom time, choose the date from the calendar and select or type the hour and minute separately (24-hour clock). The minute dropdown offers five-minute steps; you can type any exact minute. A preview confirms the selected day and time before you save.
 
 GetItDone must be running to deliver a notification. It can keep running in the background with the main window closed. If the app was fully closed at the scheduled time, the reminder is shown as overdue on the next launch; a notification is not delivered retroactively.
 
@@ -221,6 +226,18 @@ If the main file is missing or damaged, the app recovers the newest valid backup
 To transfer a notebook, quit the app on both computers and copy the data folder. Saved agent links do not require the original agent installations or histories to open the notebook. Resume still needs the matching native history, agent, and working directory on that computer; you can create new sessions locally. Knowledge files remain separate and must be copied too.
 
 For an independent backup, quit the app and back up both the data folder shown in **Settings** and your knowledge folder to another disk or backup service. Adjacent backups protect against interrupted saves and individual damaged files, but cannot protect against disk failure or deletion of the entire folder. If a save error appears at the bottom of the window, resolve it before relying on the saved data.
+
+### Automatic full backups
+
+Open **File → Settings → Backups**, select **Enable automatic full backups**, choose a local time, an interval (**every N days, weeks or months**) and a destination folder, then **Save**. For daily backups, choose **Every 1 day**. The destination must be outside the notebook data and Knowledge folders; a missing destination folder is created at backup time.
+
+The default destination is **Documents/GetItDone/Backups** (using your system's Documents location). An existing custom destination is kept. Click **Backup now** to create a full backup immediately in the folder currently shown, even when automatic backups are disabled. This does not change the automatic schedule or apply other unsaved settings. The button is disabled while a backup is running; manual errors are displayed without starting automatic retries.
+
+The first backup runs at the next selected time (today or tomorrow), then repeats at the chosen interval. **GetItDone must be running**, including hidden in the tray/menu bar. After sleep or a fully closed app, one missed backup is caught up when the app runs again; it does not create an archive for every missed day. Enable startup at login if desired. Backup failures are shown in the bottom bar and **Settings → Backups**, and retried after five minutes without skipping the missed backup.
+
+Each backup is a separate, dated `GetItDone-….zip` with all tasks (including completed tasks and subtasks), notes, reminders, colors/categories, settings, session links, saved replies, execution history, scheduled jobs and **all files and subfolders in Knowledge**. Existing edits are saved first; unreadable or changing files cause a visible failure rather than a silently incomplete ZIP. Knowledge symlinks/junctions must be backed up separately; their presence blocks the full backup. External agent projects, credentials and native chat histories are not included. ZIP files are **not encrypted**. Older backups are never automatically deleted, so monitor free space and use another disk or a backed-up folder for disk-failure protection.
+
+**Restore:** quit GetItDone and preserve your current data first. Extract the ZIP's `notebook.json` into the data folder shown in Settings, and restore `knowledge/` into your Knowledge folder. Original paths are recorded in `manifest.json`; if the Knowledge path changed, select the restored folder in the app. Each ZIP also contains `RESTORE.txt` with these instructions.
 
 ## Troubleshooting
 

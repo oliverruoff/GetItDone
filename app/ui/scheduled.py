@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDateTimeEdit,
+    QDialog,
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
@@ -34,7 +35,7 @@ from PySide6.QtWidgets import (
 from app.agents import agents
 from app.models import uid
 from app.session_paths import session_folder
-from app.ui.common import DismissibleDialog, confirm
+from app.ui.common import confirm
 from app.ui.icons import icon_button
 
 
@@ -58,7 +59,7 @@ def readable_output(run, raw=False):
     return output
 
 
-class ScheduleDialog(DismissibleDialog):
+class ScheduleDialog(QDialog):
     def __init__(self, settings, parent=None, job=None):
         super().__init__(parent)
         self.setWindowTitle("Scheduled task" if job else "New scheduled task")

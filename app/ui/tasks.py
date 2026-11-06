@@ -1,12 +1,14 @@
 import html
+import math
 import re
 from datetime import datetime, timezone
 
-from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QBrush, QColor, QDesktopServices, QKeySequence, QPen, QTextDocument
+from PySide6.QtCore import QEvent, QPointF, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QDrag, QKeySequence, QPen, QTextDocument
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QAbstractItemView,
+    QApplication,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -124,18 +126,21 @@ class ItemDelegate(QStyledItemDelegate):
 
     def title_document(self, index, width):
         document = QTextDocument()
-        document.setDefaultFont(index.data(Qt.FontRole))
+        document.setDefaultFont(index.data(Qt.FontRole) or self.parent().font())
         source = index.data(Qt.DisplayRole) or ""
         parts, end = [], 0
         for match in re.finditer(r"\[([^\]]+)\]\((https?://[^\s)]+)\)|https?://[^\s<>]+", source):
             parts.append(html.escape(source[end : match.start()]))
             url = match[2] or match[0]
             label = match[1] or url
+            if len(label) > 43:
+                label = label[:20] + "..." + label[-20:]
             parts.append(f'<a href="{html.escape(url, quote=True)}">{html.escape(label)}</a>')
             end = match.end()
         parts.append(html.escape(source[end:]))
         text = "".join(parts).replace("\n", "<br>")
-        color = index.data(Qt.ForegroundRole).color().name()
+        foreground = index.data(Qt.ForegroundRole)
+        color = foreground.color().name() if foreground else "#000000"
         document.setDefaultStyleSheet(
             f"body {{color: {color};}} a {{color: {color}; text-decoration: underline;}}"
         )
@@ -146,13 +151,20 @@ class ItemDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option, index):
         size = super().sizeHint(option, index)
-        if index.column() == 0 and index.data(ROLE + 5):
+        if index.column() == 0 and index.data(ROLE + 1) == "item":
             cell = QStyleOptionViewItem(option)
             self.initStyleOption(cell, index)
-            cell.rect.setWidth(self.parent().columnWidth(0))
+            tree = self.parent()
+            depth = 0
+            parent = index.parent()
+            while parent.isValid():
+                depth += 1
+                parent = parent.parent()
+            indentation = tree.indentation() * (depth + int(tree.rootIsDecorated()))
+            cell.rect.setWidth(max(0, tree.columnWidth(0) - indentation))
             rect = self.cell_style.subElementRect(QStyle.SE_ItemViewItemText, cell, cell.widget)
             size.setHeight(
-                max(size.height(), int(self.title_document(index, rect.width()).size().height()) + 6)
+                max(size.height(), math.ceil(self.title_document(index, rect.width()).size().height()) + 6)
             )
         return size
 
@@ -165,21 +177,30 @@ class ItemDelegate(QStyledItemDelegate):
             rect.setHeight(editor.fontMetrics().height() + 8)
         editor.setGeometry(rect)
 
+    def link_at(self, option, index, position):
+        if index.column() != 0 or index.data(ROLE + 1) != "item":
+            return ""
+        cell = QStyleOptionViewItem(option)
+        self.initStyleOption(cell, index)
+        rect = self.cell_style.subElementRect(QStyle.SE_ItemViewItemText, cell, cell.widget)
+        if not rect.contains(position.toPoint()):
+            return ""
+        point = position - rect.topLeft()
+        document = self.title_document(index, rect.width())
+        point.setY(point.y() - max(0, (rect.height() - document.size().height()) / 2))
+        anchor = document.documentLayout().anchorAt(point)
+        return anchor if QUrl(anchor).scheme() in ("https", "http") else ""
+
     def editorEvent(self, event, model, option, index):
         if (
             index.column() == 0
             and index.data(ROLE + 1) == "item"
             and event.type() == QEvent.MouseButtonRelease
         ):
-            cell = QStyleOptionViewItem(option)
-            self.initStyleOption(cell, index)
-            rect = self.cell_style.subElementRect(QStyle.SE_ItemViewItemText, cell, cell.widget)
-            point = event.position() - rect.topLeft()
-            document = self.title_document(index, rect.width())
-            point.setY(point.y() - max(0, (rect.height() - document.size().height()) / 2))
-            anchor = document.documentLayout().anchorAt(point)
-            if anchor and QUrl(anchor).scheme() in ("https", "http"):
-                QDesktopServices.openUrl(QUrl(anchor))
+            anchor = self.link_at(option, index, event.position())
+            if anchor and event.button() in (Qt.LeftButton, Qt.RightButton):
+                if event.button() == Qt.LeftButton:
+                    QDesktopServices.openUrl(QUrl(anchor))
                 return True
         return super().editorEvent(event, model, option, index)
 
@@ -256,37 +277,184 @@ class TaskTree(QTreeWidget):
     new_requested = Signal()
     indent_requested = Signal(bool)
 
-    def dropEvent(self, event):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.drag_id = None
+        self.drop_preview = None
+        self.preview_target = None
+        self.preview_parent = None
+        self.drag_position = None
+        self.scroll_direction = 0
+        self.drag_scroll = QTimer(self)
+        self.drag_scroll.setInterval(80)
+        self.drag_scroll.timeout.connect(self.scroll_drag)
+
+    def startDrag(self, supported_actions):
         source = self.currentItem()
-        target = self.itemAt(event.position().toPoint())
-        if event.source() is not self or source is None or source.data(0, ROLE + 1) != "item":
-            event.ignore()
+        if source is None or source.data(0, ROLE + 1) != "item":
             return
+        self.drag_id = source.data(0, ROLE)
+        drag = QDrag(self)
+        drag.setMimeData(self.mimeData([source]))
+        rect = self.visualItemRect(source)
+        rect.setWidth(min(rect.width(), 320))
+        rect.setHeight(min(rect.height(), 48))
+        pixmap = self.viewport().grab(rect)
+        drag.setPixmap(pixmap)
+        # Keep the drag image above the pointer so it does not cover the target gap.
+        drag.setHotSpot(QPointF(16, rect.height()).toPoint())
+        try:
+            # Qt's default MoveAction cleanup deletes model rows after exec().
+            # Our drop handler already moves/rebuilds them, so own the drag loop.
+            drag.exec(Qt.MoveAction)
+        finally:
+            self.clear_drop_preview()
+            self.drag_id = None
+            drag.deleteLater()
+
+    def drag_source(self):
+        source = self.currentItem()
+        if self.drag_id is not None:
+            source = next((row for row in self.findItems("*", Qt.MatchWildcard | Qt.MatchRecursive)
+                           if row.data(0, ROLE) == self.drag_id), None)
+        return source if source is not None and source.data(0, ROLE + 1) == "item" else None
+
+    def drop_target(self, position):
+        source = self.drag_source()
+        if source is None:
+            return None
+        target = self.itemAt(position)
+        if target is self.drop_preview and target is not None:
+            return self.preview_target
         parent, before = None, None
-        if target is not None and target.data(0, ROLE + 1) != "add":
-            if target.data(0, ROLE + 1) != "item":
-                event.ignore()
-                return
-            placement = self.dropIndicatorPosition()
-            if placement == QAbstractItemView.OnItem:
-                parent = target.data(0, ROLE)
-            else:
+        parent_row = None
+        if target is not None:
+            kind = target.data(0, ROLE + 1)
+            if kind == "add":
                 parent_row = target.parent()
-                parent = parent_row.data(0, ROLE) if parent_row else None
-                if placement == QAbstractItemView.AboveItem:
-                    before = target.data(0, ROLE)
-                else:
+            elif kind == "item":
+                rect = self.visualItemRect(target)
+                edge = min(8, max(2, rect.height() // 4))
+                if position.y() < rect.top() + edge:
+                    parent_row, before = target.parent(), target.data(0, ROLE)
+                elif position.y() > rect.bottom() - edge:
+                    parent_row = target.parent()
                     container = parent_row or self.invisibleRootItem()
-                    index = container.indexOfChild(target) + 1
-                    while index < container.childCount():
-                        sibling = container.child(index)
+                    for number in range(container.indexOfChild(target) + 1, container.childCount()):
+                        sibling = container.child(number)
                         if sibling.data(0, ROLE + 1) == "item":
                             before = sibling.data(0, ROLE)
                             break
-                        index += 1
-        self.dropped.emit(source.data(0, ROLE), parent, before)
+                else:
+                    parent_row = target
+            else:
+                return None
+        ancestor = parent_row
+        while ancestor is not None:
+            if ancestor is source:
+                return None
+            ancestor = ancestor.parent()
+        if before == source.data(0, ROLE):
+            return None
+        parent = parent_row.data(0, ROLE) if parent_row else None
+        return parent, before
+
+    def clear_drop_preview(self):
+        self.drag_scroll.stop()
+        if self.drop_preview is not None:
+            container = self.drop_preview.parent() or self.invisibleRootItem()
+            container.takeChild(container.indexOfChild(self.drop_preview))
+            self.drop_preview = None
+        if self.preview_parent is not None:
+            blocked = self.blockSignals(True)
+            self.preview_parent.setExpanded(False)
+            self.blockSignals(blocked)
+            self.preview_parent = None
+        self.preview_target = None
+
+    def update_drop_preview(self, position):
+        destination = self.drop_target(position)
+        if destination == self.preview_target:
+            return destination
+        self.clear_drop_preview()
+        if destination is None:
+            return None
+        parent, before = destination
+        rows = self.findItems("*", Qt.MatchWildcard | Qt.MatchRecursive)
+        parent_row = next((row for row in rows if row.data(0, ROLE) == parent), None) if parent else None
+        container = parent_row or self.invisibleRootItem()
+        insertion = container.childCount()
+        for number in range(container.childCount()):
+            row = container.child(number)
+            if (before is not None and row.data(0, ROLE) == before
+                    or before is None and row.data(0, ROLE + 1) == "add"):
+                insertion = number
+                break
+        preview = QTreeWidgetItem()
+        preview.setData(0, ROLE + 1, "drop-preview")
+        preview.setFlags(Qt.NoItemFlags)
+        preview.setText(0, "Move here as child" if parent else "Move here")
+        preview.setSizeHint(0, QSize(100, max(28, min(56, self.visualItemRect(self.drag_source()).height()))))
+        for column in range(self.columnCount()):
+            preview.setData(column, ROLE + 2, QColor("#dbeafe"))
+            preview.setForeground(column, QBrush(QColor("#244e79")))
+        self.drop_preview, self.preview_target = preview, destination
+        container.insertChild(insertion, preview)
+        if parent_row is not None and not parent_row.isExpanded():
+            self.preview_parent = parent_row
+            blocked = self.blockSignals(True)
+            parent_row.setExpanded(True)
+            self.blockSignals(blocked)
+        self.doItemsLayout()
+        return destination
+
+    def dragEnterEvent(self, event):
+        if event.source() is self and self.drag_source() is not None:
+            event.setDropAction(Qt.MoveAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.source() is not self:
+            event.ignore()
+            return
+        self.drag_position = event.position().toPoint()
+        destination = self.update_drop_preview(self.drag_position)
+        self.scroll_direction = (-1 if self.drag_position.y() < 24
+                                 else 1 if self.drag_position.y() > self.viewport().height() - 24 else 0)
+        if self.scroll_direction:
+            self.drag_scroll.start()
+        else:
+            self.drag_scroll.stop()
+        if destination is None:
+            event.ignore()
+        else:
+            event.setDropAction(Qt.MoveAction)
+            event.accept()
+
+    def scroll_drag(self):
+        bar = self.verticalScrollBar()
+        bar.setValue(bar.value() + self.scroll_direction * bar.singleStep())
+        self.update_drop_preview(self.drag_position)
+        if self.scroll_direction:
+            self.drag_scroll.start()
+
+    def dragLeaveEvent(self, event):
+        self.clear_drop_preview()
+        event.accept()
+
+    def dropEvent(self, event):
+        source = self.drag_source()
+        destination = self.drop_target(event.position().toPoint()) if event.source() is self else None
+        ident = source.data(0, ROLE) if source is not None else None
+        self.clear_drop_preview()
+        if ident is None or destination is None:
+            event.ignore()
+            return
         event.setDropAction(Qt.MoveAction)
         event.accept()
+        self.dropped.emit(ident, *destination)
 
     def drawBranches(self, painter, rect, index):
         if index.data(ROLE + 1) == "add":
@@ -383,7 +551,7 @@ class Tasks(QWidget):
         self.tree.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tree.setDragDropMode(QAbstractItemView.InternalMove)
         self.tree.setDefaultDropAction(Qt.MoveAction)
-        self.tree.setDropIndicatorShown(True)
+        self.tree.setDropIndicatorShown(False)
         self.tree.dropped.connect(self.drop_item)
         self.tree.itemClicked.connect(self.status_clicked)
         delegate = ItemDelegate(self.tree)
@@ -400,6 +568,15 @@ class Tasks(QWidget):
         self.tree.indent_requested.connect(self.indent_requested)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.menu)
+        self.link_toast = QLabel("URL copied to clipboard", self.tree.viewport())
+        self.link_toast.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.link_toast.setStyleSheet(
+            "background: #243247; color: white; padding: 8px 14px; border-radius: 6px;"
+        )
+        self.link_toast.hide()
+        self.link_toast_timer = QTimer(self)
+        self.link_toast_timer.setSingleShot(True)
+        self.link_toast_timer.timeout.connect(self.link_toast.hide)
         layout.addWidget(self.tree, 1)
         self.add_button = QPushButton("+  Add item")
         self.add_button.setObjectName("addTask")
@@ -419,6 +596,8 @@ class Tasks(QWidget):
 
     def drop_item(self, ident, parent, before):
         if self.notebook.relocate(ident, parent, before):
+            for ancestor in self.notebook.ancestors(ident):
+                self.view_state.setdefault("expanded", {})[ancestor["id"]] = True
             self.rebuild()
             self.tree.setCurrentItem(self.rows.get(ident))
             self.changed.emit()
@@ -484,6 +663,7 @@ class Tasks(QWidget):
 
     def rebuild(self, *args, select=None):
         self.cancel_completion_animation()
+        self.tree.clear_drop_preview()
         selected = select or self.current_id()
         scroll = self.tree.verticalScrollBar().value()
         self.building = True
@@ -943,6 +1123,22 @@ class Tasks(QWidget):
         menu.exec(position or self.tree.viewport().mapToGlobal(anchor))
 
     def menu(self, position):
+        index = self.tree.indexAt(position)
+        option = QStyleOptionViewItem()
+        self.tree.initViewItemOption(option)
+        option.rect = self.tree.visualRect(index)
+        anchor = self.tree.itemDelegate().link_at(option, index, QPointF(position))
+        if anchor:
+            QApplication.clipboard().setText(anchor)
+            self.link_toast.adjustSize()
+            self.link_toast.move(
+                max(0, (self.tree.viewport().width() - self.link_toast.width()) // 2),
+                max(0, self.tree.viewport().height() - self.link_toast.height() - 16),
+            )
+            self.link_toast.show()
+            self.link_toast.raise_()
+            self.link_toast_timer.start(2000)
+            return
         row = self.tree.itemAt(position)
         if not row or row.data(0, ROLE + 1) != "item":
             return

@@ -111,6 +111,13 @@ def validate(data):
             if reply is not None and (not isinstance(reply, dict) or not isinstance(reply.get("text"), str)):
                 fail("Invalid saved execution reply.")
     settings = data["settings"]
+    if "backups" in settings:
+        from app.backups import validate_backup
+
+        try:
+            validate_backup(settings["backups"])
+        except ValueError as exc:
+            fail(str(exc))
     for key in ("default_workdir", "default_agent", "knowledge_folder", "knowledge_last_file"):
         if key in settings and not isinstance(settings[key], str):
             fail(f"Invalid setting: {key}")

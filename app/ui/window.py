@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from app.agents import agents
 from app.agents.replies import snapshots
 from app.agents.sessions import codex_sessions, native_sessions
+from app.backups import BackupScheduler, backup_defaults
 from app.executions import execution_records, recover_process_runs
 from app.models import Notebook, now_iso, uid
 from app.notifications import Notifier
@@ -148,7 +149,7 @@ class Window(QMainWindow):
         self.tasks.action_requested.connect(self.task_action)
         self.tasks.append_requested.connect(self.append_item)
         file_menu = self.menuBar().addMenu("File")
-        file_menu.addAction("Settings …", self.settings_dialog)
+        file_menu.addAction("Settings", self.settings_dialog)
         file_menu.addAction("Save", self.save_all, "Ctrl+S")
         file_menu.addSeparator()
         file_menu.addAction("Quit", self.quit_app, "Ctrl+Q")
@@ -196,6 +197,15 @@ class Window(QMainWindow):
         self.notifier.activated.connect(self.open_reminder)
         self.notifier.status_changed.connect(lambda text: self.statusBar().showMessage(text, 20000))
         self.scheduler = Scheduler(self.notebook, self.flush, self)
+        self.backups = BackupScheduler(
+            self.notebook, self.store.folder, self.prepare_backup, self.flush,
+            lambda function, callback: Job(function, callback, self), self,
+        )
+        self.backup_status = QLabel()
+        self.statusBar().addPermanentWidget(self.backup_status)
+        self.backups.changed.connect(self.update_backup_status)
+        self.backups.status.connect(lambda text: self.statusBar().showMessage(text, 20000))
+        self.update_backup_status()
         self.scheduled = Scheduled(self.scheduler)
         self.scheduled.session_open.connect(self.resume_session)
         self.scheduled.session_details.connect(self.session_details)
@@ -318,6 +328,21 @@ class Window(QMainWindow):
 
     def save_all(self):
         return self.knowledge.save(interactive=True) and self.flush()
+
+    def prepare_backup(self):
+        if self.quitting:
+            return False
+        # Todo edits already update the notebook live; leave keyboard focus untouched.
+        self.notebook.data["settings"]["window_geometry"] = bytes(self.saveGeometry().toBase64()).decode()
+        return self.knowledge.save() and self.flush()
+
+    def update_backup_status(self):
+        config = backup_defaults() | self.notebook.data["settings"].get("backups", {})
+        label = ("Backup: in progress" if self.backups.active else
+                 "Backup: failed" if config["last_error"] and config["enabled"] else
+                 "Backup: enabled" if config["enabled"] else "Backup: disabled")
+        self.backup_status.setText(label)
+        self.backup_status.setToolTip(config["last_error"] or config["last_file"] or "Configure in File → Settings → Backups")
 
     def refresh_scheduled_sessions(self):
         focus = QApplication.focusWidget()
@@ -570,6 +595,9 @@ class Window(QMainWindow):
             self.tasks.refresh_categories()
             self.tasks.rebuild()
             self.schedule_save()
+
+            self.backups.retry_at = None
+            self.update_backup_status()
 
     def session(self, ident):
         return next((s for s in self.notebook.data["sessions"] if s["id"] == ident), None)
@@ -1088,6 +1116,8 @@ class Window(QMainWindow):
 
     def tick(self):
         self.scheduler.tick()
+        if not self.quitting:
+            self.backups.tick()
         self.refresh_executions()
         # Discovery reads agent files in a worker so large histories cannot freeze typing.
         if not getattr(self, "id_discovery_tick", 0) % 5:
@@ -1193,6 +1223,10 @@ class Window(QMainWindow):
         QTimer.singleShot(1800 if running else 0, self.finish_quit)
 
     def finish_quit(self):
+        if self.backups.active:
+            self.statusBar().showMessage("Finishing backup …")
+            QTimer.singleShot(100, self.finish_quit)
+            return
         for terminal in self.terminals.values():
             terminal.force_stop()
         if any(terminal.running for terminal in self.terminals.values()):

@@ -151,24 +151,72 @@ def test_launcher_detects_stale_bundle(tmp_path):
     assert not bundle_current(root)
 
 
-def test_full_title_expands_and_collapses_in_place(window, qtbot):
+def test_full_title_automatically_grows_in_place(window, qtbot):
     item = window.notebook.items[0]
+    tree = window.tasks.tree
+    compact = tree.visualItemRect(window.tasks.rows[item["id"]]).height()
     window.notebook.update(item["id"], text="A very long task with detail " * 50)
     window.tasks.rebuild()
-    tree = window.tasks.tree
     row = window.tasks.rows[item["id"]]
-    collapsed = tree.visualItemRect(row).height()
+    qtbot.waitUntil(lambda: tree.visualItemRect(row).height() > compact * 2)
+    expanded = tree.visualItemRect(row).height()
     actions = tree.itemWidget(row, 4)
     assert all(
         b.accessibleName() != "Expand or collapse full title"
         for b in actions.findChildren(QPushButton)
     )
     window.tasks.toggle_title(row)
-    qtbot.waitUntil(lambda: tree.visualItemRect(row).height() > collapsed * 2)
+    QApplication.processEvents()
+    assert tree.visualItemRect(row).height() == expanded
     window.tasks.toggle_title(row)
-    qtbot.waitUntil(lambda: tree.visualItemRect(row).height() == collapsed)
+    QApplication.processEvents()
+    assert tree.visualItemRect(row).height() == expanded
+    row.setText(0, "Short task")
+    qtbot.waitUntil(lambda: tree.visualItemRect(row).height() == compact)
     assert not hasattr(window.tasks, "category")
     assert not hasattr(window.tasks, "legend")
+
+
+def test_title_height_tracks_column_width_and_child_indentation(window, qtbot):
+    from PySide6.QtWidgets import QStyle, QStyleOptionViewItem
+
+    tree = window.tasks.tree
+    parent = window.notebook.items[0]
+    text = "Task details that must remain fully visible " * 15
+    window.notebook.update(parent["id"], text=text)
+    child = window.notebook.add(text, parent=parent["id"])
+    window.tasks.rebuild()
+    row = window.tasks.rows[parent["id"]]
+    child_row = window.tasks.rows[child["id"]]
+    QApplication.processEvents()
+    wide_height = tree.visualItemRect(row).height()
+    tree.header().setSectionResizeMode(0, tree.header().ResizeMode.Fixed)
+    tree.setColumnWidth(0, 280)
+    qtbot.waitUntil(lambda: tree.visualItemRect(row).height() > wide_height)
+    assert tree.visualItemRect(child_row).height() >= tree.visualItemRect(row).height()
+
+    delegate = tree.itemDelegate()
+    for task_row in (row, child_row):
+        index = tree.indexFromItem(task_row)
+        option = QStyleOptionViewItem()
+        option.rect = tree.visualRect(index)
+        delegate.initStyleOption(option, index)
+        rect = delegate.cell_style.subElementRect(QStyle.SE_ItemViewItemText, option, tree)
+        assert rect.height() >= delegate.title_document(index, rect.width()).size().height()
+
+    narrow_height = tree.visualItemRect(row).height()
+    tree.setColumnWidth(0, 530)
+    qtbot.waitUntil(lambda: tree.visualItemRect(row).height() < narrow_height)
+
+
+def test_explicit_title_line_breaks_are_fully_visible_without_expanding(window, qtbot):
+    item = window.notebook.items[0]
+    tree = window.tasks.tree
+    compact = tree.visualItemRect(window.tasks.rows[item["id"]]).height()
+    window.notebook.update(item["id"], text="First line\nSecond line\nThird line\nLast line")
+    window.tasks.rebuild()
+    row = window.tasks.rows[item["id"]]
+    qtbot.waitUntil(lambda: tree.visualItemRect(row).height() > compact * 2)
 
 
 def test_title_links_open_exact_url_and_escape_html(window, qtbot, monkeypatch):
@@ -194,6 +242,84 @@ def test_title_links_open_exact_url_and_escape_html(window, qtbot, monkeypatch):
     qtbot.mouseClick(tree.viewport(), Qt.LeftButton, pos=rect.topLeft() + QPoint(12, 12))
     assert opened == ["https://example.com/task?a=1&b=2"]
     assert row.data(0, ROLE) == item["id"]
+
+
+@pytest.mark.parametrize("markdown", [False, True])
+def test_long_hyperlinks_are_abbreviated_and_remain_clickable(window, qtbot, monkeypatch, markdown):
+    from PySide6.QtGui import QContextMenuEvent
+    from PySide6.QtWidgets import QHeaderView, QStyle, QStyleOptionViewItem
+
+    url = "https://example.com/" + "a" * 240 + "?token=" + "b" * 120
+    label = "LongLinkLabel" * 30
+    item = window.notebook.items[0]
+    window.notebook.update(item["id"], text=f"[{label}]({url})" if markdown else url)
+    window.tasks.rebuild()
+    tree = window.tasks.tree
+    tree.header().setSectionResizeMode(0, QHeaderView.Fixed)
+    tree.setColumnWidth(0, 280)
+    QApplication.processEvents()
+    row = window.tasks.rows[item["id"]]
+    index = tree.indexFromItem(row)
+    delegate = tree.itemDelegate()
+    option = QStyleOptionViewItem()
+    option.rect = tree.visualRect(index)
+    delegate.initStyleOption(option, index)
+    rect = delegate.cell_style.subElementRect(QStyle.SE_ItemViewItemText, option, tree)
+    doc = delegate.title_document(index, rect.width())
+    displayed = label if markdown else url
+    assert doc.toPlainText() == displayed[:20] + "..." + displayed[-20:]
+    assert row.text(0) == item["text"]
+    assert index.data(Qt.EditRole) == item["text"]
+    assert item["text"] in row.toolTip(0)
+    assert rect.height() >= doc.size().height()
+    layout = doc.begin().layout()
+    assert layout.lineCount() > 1
+    for number in range(layout.lineCount()):
+        assert layout.lineAt(number).naturalTextWidth() <= rect.width() + 1
+
+    opened = []
+    monkeypatch.setattr("app.ui.tasks.QDesktopServices.openUrl", lambda value: opened.append(value.toString()))
+    line = layout.lineAt(1)
+    offset = max(0, (rect.height() - doc.size().height()) / 2)
+    point = rect.topLeft() + QPoint(5, round(offset + line.y() + line.height() / 2))
+    qtbot.mouseClick(tree.viewport(), Qt.LeftButton, pos=point)
+    assert opened == [url]
+    QApplication.clipboard().setText("previous clipboard content")
+    qtbot.mouseClick(tree.viewport(), Qt.RightButton, pos=point)
+    assert opened == [url]
+    context = QContextMenuEvent(QContextMenuEvent.Mouse, point, tree.viewport().mapToGlobal(point))
+    QApplication.sendEvent(tree.viewport(), context)
+    assert QApplication.clipboard().text() == url
+    assert opened == [url]
+    assert window.tasks.link_toast.isVisible()
+    assert window.tasks.link_toast.text() == "URL copied to clipboard"
+    qtbot.waitUntil(lambda: not window.tasks.link_toast.isVisible(), timeout=3000)
+
+
+def test_right_click_outside_hyperlink_keeps_task_menu(window, monkeypatch):
+    tree = window.tasks.tree
+    row = window.tasks.rows[window.notebook.items[0]["id"]]
+    menus = []
+    monkeypatch.setattr(window.tasks, "item_menu", lambda *args: menus.append(args))
+    QApplication.clipboard().setText("unchanged")
+    window.tasks.menu(tree.visualRect(tree.indexFromItem(row)).center())
+    assert len(menus) == 1
+    assert menus[0][0] == window.notebook.items[0]["id"]
+    assert QApplication.clipboard().text() == "unchanged"
+    assert not window.tasks.link_toast.isVisible()
+
+
+@pytest.mark.parametrize("length", [40, 43, 44])
+def test_hyperlink_abbreviation_only_when_shorter(window, length):
+    url = "https://example.com/" + "x" * (length - len("https://example.com/"))
+    item = window.notebook.items[0]
+    window.notebook.update(item["id"], text="Before " + url + " after")
+    window.tasks.rebuild()
+    tree = window.tasks.tree
+    index = tree.indexFromItem(window.tasks.rows[item["id"]])
+    doc = tree.itemDelegate().title_document(index, 600)
+    displayed = url[:20] + "..." + url[-20:] if length > 43 else url
+    assert doc.toPlainText() == "Before " + displayed + " after"
 
 
 @pytest.mark.parametrize("agent", ["claude", "pi"])

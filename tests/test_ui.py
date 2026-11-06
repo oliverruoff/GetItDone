@@ -361,7 +361,6 @@ def test_resume_without_open_terminal_opens_exact_session_immediately(qtbot, tmp
 
 def test_task_drop_reorders_nests_and_emits_save(qtbot):
     from PySide6.QtCore import QPointF
-    from PySide6.QtWidgets import QAbstractItemView
 
     from app.ui.tasks import Tasks
 
@@ -378,12 +377,14 @@ def test_task_drop_reorders_nests_and_emits_save(qtbot):
 
     class Drop:
         accepted = False
+        above = True
 
         def source(self):
             return tasks.tree
 
         def position(self):
-            return QPointF(tasks.tree.visualItemRect(tasks.rows[b["id"]]).center())
+            rect = tasks.tree.visualItemRect(tasks.rows[b["id"]])
+            return QPointF(rect.center().x(), rect.top() + 1) if self.above else QPointF(rect.center())
 
         def setDropAction(self, action):
             pass
@@ -395,12 +396,11 @@ def test_task_drop_reorders_nests_and_emits_save(qtbot):
             self.accepted = False
 
     tasks.tree.setCurrentItem(tasks.rows[a["id"]])
-    tasks.tree.dropIndicatorPosition = lambda: QAbstractItemView.AboveItem
     drop = Drop()
     tasks.tree.dropEvent(drop)
     assert drop.accepted and changes == [True]
     tasks.tree.setCurrentItem(tasks.rows[a["id"]])
-    tasks.tree.dropIndicatorPosition = lambda: QAbstractItemView.OnItem
+    drop.above = False
     tasks.tree.dropEvent(drop)
     assert a["parent_id"] == b["id"]
     assert child["parent_id"] == a["id"]
