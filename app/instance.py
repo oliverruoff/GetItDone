@@ -80,7 +80,7 @@ class InstanceServer(QObject):
             return
         result = {"revision": self.revision}
         if action == "status":
-            result["status"] = "running"
+            result["status"] = "stopping" if self.window.quitting else "running"
         elif action == "activate":
             self.window.restore()
             result["status"] = "activated"

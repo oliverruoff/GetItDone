@@ -18,6 +18,7 @@ def opencode_snapshot(session_ids):
             [executable, "api", operation, *params],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=4,
             creationflags=0x08000000 if os.name == "nt" else 0,
         )

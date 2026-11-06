@@ -1,4 +1,6 @@
 import json
+import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -7,6 +9,7 @@ from PySide6.QtGui import QAction, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QDialog,
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
@@ -36,7 +39,7 @@ from app.storage import StorageError
 from app.terminal.bridge import Terminal
 from app.ui.agent_context import AgentContextPanel
 from app.ui.colors import ColorPalette
-from app.ui.common import DismissibleDialog, Job, TerminalPopout, confirm, error
+from app.ui.common import DismissibleDialog, Job, SafeBrowser, TerminalPopout, confirm, error
 from app.ui.dialogs import ReminderDialog, SessionDialog, SettingsDialog
 from app.ui.executions import Executions
 from app.ui.icons import icon, icon_button
@@ -74,6 +77,9 @@ class Window(QMainWindow):
         self.saver.setSingleShot(True)
         self.saver.setInterval(400)
         self.saver.timeout.connect(self.flush)
+        self.quit_timer = QTimer(self)
+        self.quit_timer.setSingleShot(True)
+        self.quit_timer.timeout.connect(self.finish_quit)
         self.reminders = Reminders(self.notebook)
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -955,7 +961,17 @@ class Window(QMainWindow):
             terminal.agent_message = False
         self.tasks.update_session(session)
         self.schedule_save()
-        dialog = DismissibleDialog(self)
+        dialog = self.findChild(QDialog, "lastReply:" + ident)
+        if dialog is not None:
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
+            return
+        # Read-only replies must not grab all input like a modal Qt.Popup or
+        # enter a nested event loop while live terminals continue updating.
+        dialog = QDialog(self, Qt.Window)
+        dialog.setObjectName("lastReply:" + ident)
+        dialog.setAttribute(Qt.WA_DeleteOnClose)
         dialog.setWindowTitle("Last reply · " + session["title"])
         dialog.resize(760, 560)
         layout = QVBoxLayout(dialog)
@@ -966,14 +982,13 @@ class Window(QMainWindow):
         except ValueError:
             pass
         layout.addWidget(QLabel(session["agent"] + " · " + saved_at))
-        editor = QPlainTextEdit()
-        editor.setReadOnly(True)
-        editor.setPlainText(reply.get("text") or "No assistant reply has been captured for this session yet.")
+        editor = SafeBrowser()
+        editor.setMarkdown(reply.get("text") or "No assistant reply has been captured for this session yet.")
         layout.addWidget(editor)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
-        dialog.exec()
+        dialog.show()
 
     def apply_agent_snapshot(self, ident, snapshot):
         session = self.session(ident)
@@ -1211,26 +1226,55 @@ class Window(QMainWindow):
         self.notebook.data["settings"]["window_geometry"] = bytes(self.saveGeometry().toBase64()).decode()
         if not self.flush():
             return
+        try:
+            self.scheduler.shutdown()
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.statusBar().showMessage("Could not stop scheduled runs: " + str(exc))
+            return
         self.quitting = True
+        self.quit_deadline = time.monotonic() + 15
         self.timer.stop()
-        self.scheduler.shutdown()
         self.saver.stop()
         self.setEnabled(False)
         self.statusBar().showMessage("Stopping sessions …")
         for terminal in running:
             terminal.stop_requested = True
-            terminal.stop()
-        QTimer.singleShot(1800 if running else 0, self.finish_quit)
+            try:
+                terminal.stop()
+            except (OSError, subprocess.SubprocessError) as exc:
+                self.cancel_quit("Could not stop a session: " + str(exc))
+                return
+        self.quit_timer.start(1800 if running else 0)
+
+    def cancel_quit(self, message):
+        # Never leave a saved notebook permanently disabled after a failed
+        # process shutdown. Keep the lock and let the user retry safely.
+        self.quitting = False
+        self.quit_timer.stop()
+        self.setEnabled(True)
+        self.timer.start()
+        self.schedule_save()
+        self.statusBar().showMessage(message)
 
     def finish_quit(self):
+        if not self.quitting:
+            return
+        if time.monotonic() >= self.quit_deadline:
+            self.cancel_quit("Shutdown did not finish. GetItDone remains open; please retry Quit.")
+            return
         if self.backups.active:
             self.statusBar().showMessage("Finishing backup …")
-            QTimer.singleShot(100, self.finish_quit)
+            self.quit_timer.start(100)
             return
         for terminal in self.terminals.values():
-            terminal.force_stop()
+            if terminal.running:
+                try:
+                    terminal.force_stop()
+                except (OSError, subprocess.SubprocessError) as exc:
+                    self.cancel_quit("Could not stop a session: " + str(exc))
+                    return
         if any(terminal.running for terminal in self.terminals.values()):
-            QTimer.singleShot(100, self.finish_quit)
+            self.quit_timer.start(100)
             return
         from PySide6.QtCore import QCoreApplication
 
@@ -1238,7 +1282,9 @@ class Window(QMainWindow):
             for execution in session.get("process_runs", []):
                 if execution["status"] == "running":
                     execution.update(status="stopped", finished_at=now_iso())
-        self.flush()
+        if not self.flush():
+            self.cancel_quit("Could not save the notebook. GetItDone remains open.")
+            return
         for terminal in self.terminals.values():
             terminal.close()
             terminal.deleteLater()
@@ -1246,4 +1292,8 @@ class Window(QMainWindow):
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         self.tray.hide()
         self.close()
-        QApplication.instance().quit()
+        # quit() asks remaining Qt windows to close again. Hide-to-tray / popup
+        # close handlers can veto it even after all sessions were stopped,
+        # leaving a disabled, invisible instance holding the notebook lock.
+        # Saving and process cleanup have succeeded: leave the loop directly.
+        QApplication.instance().exit(0)

@@ -133,7 +133,11 @@ def main():
             from app.instance import request
 
             status = request(folder, "status")
-            if status and not args.replace_running and status.get("revision") == loaded_revision:
+            # A normal launch only opens the existing notebook. Source edits
+            # must not silently stop its agents or initiate a version handover.
+            if status and not args.replace_running:
+                if status.get("status") == "stopping":
+                    raise StorageError("GetItDone is still stopping its sessions. Please wait before reopening it.")
                 request(folder, "activate")
                 return 0
             response = request(folder, "replace") if status else None

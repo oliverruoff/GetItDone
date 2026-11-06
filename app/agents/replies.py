@@ -42,7 +42,7 @@ def history_path(session):
     matches = []
     for path in paths:
         try:
-            with path.open() as stream:
+            with path.open(encoding="utf-8") as stream:
                 for _, line in zip(range(20), stream):
                     entry = json.loads(line)
                     meta = entry.get("payload", {}) if agent == "codex" else entry
