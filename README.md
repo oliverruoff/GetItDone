@@ -8,6 +8,21 @@ GetItDone is your local work notebook for macOS and Windows. Break tasks into sm
 
 The screenshots show the macOS interface with example data.
 
+## Canvas
+
+The **Canvas** tab displays a freely editable local HTML page. Use **Open agent …**
+at the bottom to choose an installed agent and work directly in the Canvas folder.
+The agent terminal opens below the page; HTML and asset changes reload automatically.
+Canvas terminals are live-only, not saved notebook sessions.
+
+The folder is `canvas/` inside GetItDone's data directory and starts with
+`canvas.html` and `AGENTS.md`. There is no required framework or build step.
+Full manual and scheduled ZIP backups include **everything in this folder**.
+Copy required images, CSS, JavaScript and data inside it and use relative paths:
+files outside the folder and remote resources are not included by the Canvas backup.
+Symlinks/junctions cause backups to fail rather than pulling in external files.
+To restore, quit GetItDone and restore `canvas/` into the data directory.
+
 ## Getting started
 
 Open **GetItDone**. On macOS, you can drag the app into Applications and launch it from there. On Windows, launch it from the Start menu after installation. If you have already set up the project locally, double-click **run.command** on your Mac to launch the current version.

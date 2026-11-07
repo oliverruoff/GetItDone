@@ -62,7 +62,9 @@ class BackupSettings(QWidget):
         form.addRow(self.backup_now_button)
         hint = QLabel(
             "Each backup is a new ZIP containing all tasks, subtasks, notes, reminders, categories, "
-            "settings, session links, saved replies, scheduled jobs and the entire Knowledge folder.\n\n"
+            "settings, session links, saved replies, scheduled jobs, the entire Knowledge folder "
+            "and the entire Canvas folder (HTML, AGENTS.md and all assets). Files referenced outside "
+            "the Canvas folder are not included by its backup; copy them inside.\n\n"
             "GetItDone must be running (the window can be hidden). Missed backups are caught up once "
             "on the next start or after sleep. The first backup is at the next selected time; "
             "the interval starts there. Scheduled backup errors are retried after 5 minutes.\n"

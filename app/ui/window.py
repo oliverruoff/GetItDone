@@ -38,6 +38,7 @@ from app.scheduling import Scheduler
 from app.storage import StorageError
 from app.terminal.bridge import Terminal
 from app.ui.agent_context import AgentContextPanel
+from app.ui.canvas import Canvas
 from app.ui.colors import ColorPalette
 from app.ui.common import DismissibleDialog, Job, SafeBrowser, TerminalPopout, confirm, error
 from app.ui.dialogs import ReminderDialog, SessionDialog, SettingsDialog
@@ -135,6 +136,8 @@ class Window(QMainWindow):
         self.knowledge.settings_changed.connect(self.schedule_save)
         self.workspace.addTab(self.task_page, "Tasks")
         self.workspace.addTab(self.knowledge, "Knowledge")
+        self.canvas = Canvas(self.store.folder, self.notebook.data["settings"], self)
+        self.workspace.addTab(self.canvas, "Canvas")
         self.workspace.addTab(self.inspector, "Agent context")
         self.last_workspace = 0
         self.workspace.currentChanged.connect(self.workspace_changed)
@@ -1204,7 +1207,7 @@ class Window(QMainWindow):
         if self.quitting:
             for action in self.actions():
                 action.setEnabled(False)
-            for terminal in self.terminals.values():
+            for terminal in self.all_terminals():
                 if not terminal.running:
                     terminal.close()
             event.accept()
@@ -1223,7 +1226,7 @@ class Window(QMainWindow):
             return
         if not self.knowledge.guard():
             return
-        running = [t for t in self.terminals.values() if t.running]
+        running = [t for t in self.all_terminals() if t.running]
         scheduled_running = len(self.scheduler.active)
         if (running or scheduled_running) and not confirm(
             self,
@@ -1274,14 +1277,14 @@ class Window(QMainWindow):
             self.statusBar().showMessage("Finishing backup …")
             self.quit_timer.start(100)
             return
-        for terminal in self.terminals.values():
+        for terminal in self.all_terminals():
             if terminal.running:
                 try:
                     terminal.force_stop()
                 except (OSError, subprocess.SubprocessError) as exc:
                     self.cancel_quit("Could not stop a session: " + str(exc))
                     return
-        if any(terminal.running for terminal in self.terminals.values()):
+        if any(terminal.running for terminal in self.all_terminals()):
             self.quit_timer.start(100)
             return
         from PySide6.QtCore import QCoreApplication
@@ -1293,10 +1296,11 @@ class Window(QMainWindow):
         if not self.flush():
             self.cancel_quit("Could not save the notebook. GetItDone remains open.")
             return
-        for terminal in self.terminals.values():
+        for terminal in self.all_terminals():
             terminal.close()
             terminal.deleteLater()
         self.terminals.clear()
+        self.canvas.terminals.clear()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         self.tray.hide()
         self.close()
@@ -1306,3 +1310,6 @@ class Window(QMainWindow):
         # Saving and process cleanup have succeeded: leave the loop directly.
         self.notifier.close()
         QApplication.instance().exit(0)
+
+    def all_terminals(self):
+        return [*self.terminals.values(), *self.canvas.terminals]

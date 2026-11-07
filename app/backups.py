@@ -93,10 +93,15 @@ def create_backup(data, data_folder, now=None):
         with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED,
                              allowZip64=True, strict_timestamps=False) as archive:
             archive.writestr("notebook.json", json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False))
-            if knowledge:
-                root = Path(knowledge).expanduser()
+            canvas = Path(data_folder) / "canvas"
+            sources = [("knowledge", Path(knowledge).expanduser())] if knowledge else []
+            if canvas.exists() or canvas.is_symlink():
+                sources.append(("canvas", canvas))
+            for kind, root in sources:
+                if root.is_symlink() or getattr(root, "is_junction", lambda: False)():
+                    raise OSError(f"Backup cannot safely include a linked {kind} path: {root}")
                 if not root.is_dir():
-                    raise OSError("The knowledge folder is unavailable; no complete backup was created.")
+                    raise OSError(f"The {kind} folder is unavailable; no complete backup was created.")
                 # os.walk reports traversal errors rather than silently omitting unreadable folders.
                 def failed(exc):
                     raise exc
@@ -105,27 +110,30 @@ def create_backup(data, data_folder, now=None):
                     for name in folders + files:
                         path = Path(directory) / name
                         if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
-                            raise OSError(f"Backup cannot safely include a linked knowledge path: {path}")
-                        relative = "knowledge/" + path.relative_to(root).as_posix()
+                            raise OSError(f"Backup cannot safely include a linked {kind} path: {path}")
+                        relative = kind + "/" + path.relative_to(root).as_posix()
                         if name in folders:
                             archive.writestr(relative + "/", b"")
                         else:
                             before = path.stat()
                             if not stat.S_ISREG(before.st_mode):
-                                raise OSError(f"Knowledge path is not a regular file: {path}")
+                                raise OSError(f"{kind.title()} path is not a regular file: {path}")
                             archive.write(path, relative)
                             after = path.stat()
                             if (before.st_size, before.st_mtime_ns, before.st_ino) != (
                                     after.st_size, after.st_mtime_ns, after.st_ino):
-                                raise OSError(f"Knowledge file changed during backup: {path}")
-                archive.writestr("knowledge/", b"")
+                                raise OSError(f"{kind.title()} file changed during backup: {path}")
+                archive.writestr(kind + "/", b"")
             archive.writestr("manifest.json", json.dumps(dict(
                 format="GetItDone backup", version=1, created_at=now.isoformat(),
                 data_folder=str(Path(data_folder).resolve()), knowledge_folder=knowledge,
+                canvas_folder=str(canvas.resolve()),
             ), ensure_ascii=False, indent=2))
             archive.writestr("RESTORE.txt", (
                 "Quit GetItDone before restoring. Preserve your current data first.\n"
                 "Extract notebook.json into the data folder shown in Settings.\n"
+                "Restore canvas/ into that same data folder, including all its files and subfolders.\n"
+                "Files outside canvas/ referenced by the Canvas HTML are not part of the Canvas backup.\n"
                 "Restore knowledge/ into your knowledge folder (its original path is in manifest.json).\n"
                 "If that path changed, choose the restored folder in Knowledge after starting the app.\n"
                 "External agent projects, credentials and native chat histories are not included.\n"

@@ -33,7 +33,7 @@ from app.ui.common import DismissibleDialog, Job, confirm, error
 
 
 class SessionDialog(QDialog):
-    def __init__(self, settings, parent=None):
+    def __init__(self, settings, parent=None, *, fixed_directory=None):
         super().__init__(parent)
         self.setWindowTitle("New agent session")
         self.resize(570, 260)
@@ -49,7 +49,11 @@ class SessionDialog(QDialog):
         layout.addRow("Agent", self.agent)
         line = QHBoxLayout()
         self.workdir = QLineEdit(str(session_folder(settings)))
+        if fixed_directory is not None:
+            self.workdir.setText(str(fixed_directory))
+            self.workdir.setReadOnly(True)
         choose = QPushButton("Choose …")
+        choose.setEnabled(fixed_directory is None)
         choose.clicked.connect(self.choose)
         line.addWidget(self.workdir, 1)
         line.addWidget(choose)
@@ -58,7 +62,12 @@ class SessionDialog(QDialog):
         self.info.setWordWrap(True)
         self.info.setTextFormat(Qt.PlainText)
         layout.addRow(self.info)
-        hint = QLabel("Only the item text is copied. Paste and submit it yourself in the terminal.")
+        hint = QLabel(
+            "The agent opens in the Canvas folder. Ask it to read AGENTS.md and edit canvas.html. "
+            "Canvas terminals are live only; native agent histories are not included in backups."
+            if fixed_directory is not None else
+            "Only the item text is copied. Paste and submit it yourself in the terminal."
+        )
         hint.setWordWrap(True)
         layout.addRow(hint)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
