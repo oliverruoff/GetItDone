@@ -43,6 +43,7 @@ from app.ui.common import DismissibleDialog, Job, SafeBrowser, TerminalPopout, c
 from app.ui.dialogs import ReminderDialog, SessionDialog, SettingsDialog
 from app.ui.icons import icon, icon_button
 from app.ui.tasks import Tasks
+from app.ui.theme import apply_theme, styled
 
 
 def app_icon():
@@ -421,12 +422,12 @@ class Window(QMainWindow):
             self.store.save(self.notebook.data)
             self.save_failed = False
             self.save_status.setText("All changes saved")
-            self.save_status.setStyleSheet("color: #28765b; padding: 3px 10px;")
+            styled(self.save_status, "color: $success; padding: 3px 10px;")
             self.statusBar().showMessage("Saved locally", 2500)
             return True
         except StorageError as exc:
             self.save_status.setText("Save failed — changes are not on disk")
-            self.save_status.setStyleSheet("color: #b02c35; font-weight: 600; padding: 3px 10px;")
+            styled(self.save_status, "color: $error; font-weight: 600; padding: 3px 10px;")
             self.statusBar().showMessage(f"NOT SAVED · {exc}")
             if not self.save_failed:
                 self.save_failed = True
@@ -698,11 +699,16 @@ class Window(QMainWindow):
                 self.notebook.delete_category(ident)
             self.notebook.data["settings"].update(dialog.settings)
             self.notebook.data["categories"] = dialog.categories
+            apply_theme(QApplication.instance(), dialog.settings.get("theme", "light"))
             inspector = self.optional_pages["inspector"]["widget"]
             if inspector is not None:
                 inspector.refresh()
             self.tasks.refresh_categories()
             self.tasks.rebuild()
+            self.refresh_executions()
+            scheduled = self.optional_pages["scheduled"]["widget"]
+            if scheduled is not None:
+                scheduled.refresh()
             self.schedule_save()
 
             self.backups.retry_at = None

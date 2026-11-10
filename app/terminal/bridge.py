@@ -1,6 +1,7 @@
 """Bounded in-memory output queue and strict local-only WebEngine bridge."""
 
 import codecs
+import json
 import os
 import queue
 import threading
@@ -8,6 +9,7 @@ from collections import deque
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, QUrl, Signal, Slot
+from PySide6.QtGui import QColor
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import (
     QWebEnginePage,
@@ -128,11 +130,33 @@ class Terminal(QWebEngineView):
         self.timer.timeout.connect(self.drain)
         self.timer.start(25)
         self.ended.connect(self.on_end)
+        self.apply_theme()
         self.setUrl(QUrl.fromLocalFile(str(Path(__file__).parent / "web/index.html")))
+
+    def apply_theme(self):
+        from app.ui.theme import EVERFOREST, is_dark
+
+        if self.disposed:
+            return
+        theme = dict(background="#18202b", foreground="#e1e6ef", cursor="#e1e6ef", selectionBackground="#42536b")
+        if is_dark():
+            theme.update(
+                background=EVERFOREST["base"], foreground=EVERFOREST["text"],
+                cursor=EVERFOREST["accent"], selectionBackground=EVERFOREST["selection"],
+                black="#343f44", red="#e67e80", green="#a7c080", yellow="#dbbc7f",
+                blue="#7fbbb3", magenta="#d699b6", cyan="#83c092", white="#d3c6aa",
+                brightBlack="#859289", brightRed="#e67e80", brightGreen="#a7c080",
+                brightYellow="#dbbc7f", brightBlue="#7fbbb3", brightMagenta="#d699b6",
+                brightCyan="#83c092", brightWhite="#e4dccb",
+            )
+        self.page().setBackgroundColor(QColor(theme["background"]))
+        if self.ready_state:
+            self.page().runJavaScript("window.setTerminalTheme(" + json.dumps(theme) + ")")
 
     @Slot()
     def ready(self):
         self.ready_state = True
+        self.apply_theme()
         while self.pending:
             self.output_ready.emit(self.pending.popleft())
         self.pending_size = 0

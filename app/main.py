@@ -5,72 +5,10 @@ import sys
 from pathlib import Path
 
 
-def configure_style(app):
-    from PySide6.QtGui import QColor, QPalette
+def configure_style(app, theme="light"):
+    from app.ui.theme import apply_theme
 
-    app.setStyle("Fusion")
-    palette = QPalette()
-    for role, color in (
-        (QPalette.Window, "#f4f5f7"),
-        (QPalette.WindowText, "#243247"),
-        (QPalette.Base, "#ffffff"),
-        (QPalette.AlternateBase, "#f7f9fb"),
-        (QPalette.Text, "#243247"),
-        (QPalette.Button, "#edf0f4"),
-        (QPalette.ButtonText, "#243247"),
-        (QPalette.Highlight, "#dce9f7"),
-        (QPalette.HighlightedText, "#172b43"),
-        (QPalette.ToolTipBase, "#ffffff"),
-        (QPalette.ToolTipText, "#243247"),
-        (QPalette.PlaceholderText, "#6e7b8e"),
-        (QPalette.Light, "#ffffff"),
-        (QPalette.Midlight, "#e5e9ef"),
-        (QPalette.Mid, "#9ba7b5"),
-        (QPalette.Dark, "#687789"),
-        (QPalette.Shadow, "#4a5869"),
-    ):
-        palette.setColor(role, QColor(color))
-    app.setPalette(palette)
-    app.setStyleSheet("""
-        QMainWindow, QWidget { font-size: 13px; }
-        QMainWindow { background: #f6f8fc; }
-        QToolBar { background: #edf0f4; border-bottom: 1px solid #c8ced6; spacing: 3px; padding: 5px; }
-        QToolButton { padding: 6px 7px; }
-        QTreeWidget, QListWidget, QPlainTextEdit, QTextBrowser { background: white; alternate-background-color: #f7f9fb; border: 1px solid #cbd1d9; selection-background-color: #dce9f7; selection-color: #172b43; }
-        QTreeWidget::item { min-height: 24px; border-bottom: 1px solid #e5e9ee; }
-        QHeaderView::section { background: #ffffff; color: #52647e; border: none; border-bottom: 1px solid #dce3ed; padding: 6px; font-weight: 500; }
-        QPushButton { padding: 6px 10px; background: #ffffff; border: 1px solid #d3dce8; border-radius: 6px; color: #294662; }
-        QPushButton:hover { background: #eaf2fc; border-color: #4b78a6; }
-        QPushButton:pressed { background: #d5e5f7; }
-        QPushButton:focus { border: 2px solid #355d84; }
-        QTreeWidget#taskTree::item { min-height: 24px; }
-        QTreeWidget#taskTree QPushButton { padding: 2px 8px; }
-        QPushButton#addTask { text-align: left; padding-left: 18px; background: #edf5ff; color: #224f80; border: 1px solid #90afd0; font-weight: 600; }
-        QPushButton#addTask:hover { background: #dcecff; }
-        QLabel#taskHint { color: #526276; padding: 5px 2px; }
-        QMenu { background: white; border: 1px solid #bbc8d7; padding: 5px; }
-        QMenu::item { padding: 8px 20px; }
-        QMenu::item:selected { background: #eaf2fc; }
-        QLineEdit, QComboBox { padding: 7px; border: 1px solid #d6dfeb; border-radius: 6px; background: #ffffff; }
-        QLineEdit#itemTextEditor { border: 1px solid #769bc7; border-radius: 0px; color: #172b43; background: #ffffff; padding: 0px; }
-        QTabBar::tab { padding: 9px 20px; border: none; color: #64738b; background: transparent; }
-        QTabBar::tab:selected { color: #23588b; border-bottom: 3px solid #3b75b0; font-weight: 600; }
-        QWidget#inlineNote { background: #f8faff; border-bottom: 1px solid #dfe6f0; }
-        QWidget#inlineNote QPlainTextEdit { border: 1px solid #dfe6f0; border-radius: 6px; padding: 5px; background: #ffffff; }
-        QFrame#undoNotice { background: #edf7f2; border: 1px solid #b4d6c6; border-radius: 7px; }
-        QSplitter::handle { background: #e0e4e9; }
-        QLabel#documentTitle { font-size: 17px; font-weight: 600; padding: 5px 0; }
-        QStatusBar { color: #526276; }
-    """)
-    assets = Path(__file__).parent / "ui/assets"
-    app.setStyleSheet(
-        app.styleSheet()
-        + f'''
-        QTreeWidget::indicator {{ width: 20px; height: 20px; }}
-        QTreeWidget::indicator:unchecked {{ image: url("{(assets / "unchecked.svg").as_posix()}"); }}
-        QTreeWidget::indicator:checked {{ image: url("{(assets / "checked.svg").as_posix()}"); }}
-    '''
-    )
+    apply_theme(app, theme)
 
 
 def main():
@@ -167,13 +105,13 @@ def main():
         box.setTextFormat(Qt.PlainText)
         box.exec()
         return 1
+    configure_style(app, data["settings"].get("theme", "light"))
     if store.recovery_notice:
         box = QMessageBox(QMessageBox.Warning, "GetItDone · Notebook recovered", store.recovery_notice)
         box.setTextFormat(Qt.PlainText)
         box.exec()
     from app.ui.window import Window
 
-    configure_style(app)
     window = Window(store, data)
     from app.instance import InstanceServer
 

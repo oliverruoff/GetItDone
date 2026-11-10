@@ -190,7 +190,7 @@ def docx_html(path):
                 raise DocumentError("The uncompressed Word document is too large (50 MB maximum).")
         document = Document(path)
         parts = [
-            '<p style="color:#666">Content preview · Layout, images and embedded objects are not fully displayed.</p>'
+            '<p><i>Content preview · Layout, images and embedded objects are not fully displayed.</i></p>'
         ]
         for block in document.iter_inner_content():
             if isinstance(block, Paragraph):

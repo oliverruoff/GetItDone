@@ -20,7 +20,8 @@ def test_folder_picker_opens_without_dismissing_owner(qtbot, tmp_path, monkeypat
         data["settings"].update(settings)
         dialog = SettingsDialog(data, tmp_path / "data" / "notebook.json", "Test")
         if kind == "backup":
-            dialog.findChild(QTabWidget).setCurrentIndex(1)
+            tabs = dialog.findChild(QTabWidget)
+            tabs.setCurrentIndex(tabs.indexOf(dialog.backups))
             dialog.backups.enabled.setChecked(True)
             button = dialog.backups.choose
             field = dialog.backups.folder

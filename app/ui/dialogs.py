@@ -292,6 +292,21 @@ class SettingsDialog(QDialog):
         info.setWordWrap(True)
         form.addRow(info)
         tabs.addTab(general, "General")
+        appearance = QWidget()
+        appearance_form = QFormLayout(appearance)
+        self.theme = QComboBox()
+        self.theme.setAccessibleName("Color theme")
+        self.theme.addItem("Light", "light")
+        self.theme.addItem("Dark · Everforest", "everforest")
+        self.theme.setCurrentIndex(max(0, self.theme.findData(self.settings.get("theme", "light"))))
+        appearance_form.addRow("Theme", self.theme)
+        appearance_info = QLabel(
+            "Everforest combines dark forest-gray surfaces, warm text and soft green accents.\n"
+            "Applies to menus, dialogs, row colors and integrated terminals when you save."
+        )
+        appearance_info.setWordWrap(True)
+        appearance_form.addRow(appearance_info)
+        tabs.addTab(appearance, "Appearance")
         self.backups = BackupSettings(data["settings"], data_path.parent, getattr(parent, "backups", None))
         tabs.addTab(self.backups, "Backups")
         cats = QWidget()
@@ -404,6 +419,7 @@ class SettingsDialog(QDialog):
             self.settings.update(
                 default_workdir=directory, default_agent=self.agent.currentData(), profiles=profiles,
                 backups=backup_settings,
+                theme=self.theme.currentData(),
             )
             self.accept()
         except (ValueError, TypeError, OSError) as exc:

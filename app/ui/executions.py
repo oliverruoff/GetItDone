@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.scheduled import Scheduled, readable_output
+from app.ui.theme import color, theme_name
 
 
 class Executions(QWidget):
@@ -46,7 +47,7 @@ class Executions(QWidget):
         layout.addLayout(bar)
         hint = QLabel("All agent processes launched from this notebook. Open terminals can be idle; saved history stays available after restart.")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #64738b;")
+        hint.setProperty("muted", True)
         layout.addWidget(hint)
         split = QSplitter(Qt.Vertical)
         self.table = QTreeWidget()
@@ -57,7 +58,6 @@ class Executions(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
-        self.table.setStyleSheet("QTreeWidget::item:selected { background: #dce9f7; color: #172b43; }")
         for index, width in enumerate([300, 95, 105, 150, 170, 170]):
             self.table.setColumnWidth(index, width)
         self.table.header().setSectionResizeMode(0, QHeaderView.Stretch)
@@ -107,8 +107,8 @@ class Executions(QWidget):
         self.summary.setText(f"{len(live)} running · {scheduled} scheduled · {len(records)-len(live)} in history")
         mode = self.filter.currentIndex()
         visible = [r for r in records if mode == 0 or (r["active"] if mode == 1 else not r["active"])]
-        signature = tuple((r["id"], r["title"], r["agent"], r["origin"], r["status"], r["active"],
-                           r["started_at"], r["finished_at"]) for r in visible)
+        signature = (theme_name(), tuple((r["id"], r["title"], r["agent"], r["origin"], r["status"], r["active"],
+                           r["started_at"], r["finished_at"]) for r in visible))
         if signature != self.signature:
             self.signature = signature
             self.table.blockSignals(True)
@@ -118,8 +118,8 @@ class Executions(QWidget):
                                        Scheduled.local_time(record["started_at"]), Scheduled.local_time(record["finished_at"])])
                 row.setData(0, Qt.UserRole, record["id"])
                 row.setToolTip(0, record["title"])
-                color = "#23588b" if record["active"] else "#a63434" if record["status"] in ("Failed", "Interrupted") else "#52647e"
-                row.setForeground(3, QColor(color))
+                ink = color("accent_text" if record["active"] else "error" if record["status"] in ("Failed", "Interrupted") else "muted")
+                row.setForeground(3, QColor(ink))
                 self.table.addTopLevelItem(row)
                 if record["id"] == selected:
                     self.table.setCurrentItem(row)

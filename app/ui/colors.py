@@ -4,6 +4,9 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QPushButton, QToolButton, QVBoxLayout
 
+from app.ui.theme import color as theme_color
+from app.ui.theme import row_color, styled
+
 PALETTE = (
     ("Red", "#f4c2c2"),
     ("Orange", "#f7d5b8"),
@@ -53,7 +56,7 @@ class ColorPalette(QFrame):
         super().__init__(parent, Qt.Popup)
         self.setObjectName("colorPalette")
         self.setWindowTitle("Row color")
-        self.setStyleSheet("QFrame#colorPalette { background: #ffffff; border: 1px solid #a6b3c2; }")
+        styled(self, "QFrame#colorPalette { background: $panel; border: 1px solid $strong_border; }")
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Row color"))
         grid = QGridLayout()
@@ -66,11 +69,6 @@ class ColorPalette(QFrame):
             button.setToolTip(name)
             button.setProperty("color", color)
             button.setText("✓" if color.lower() == display_color(current or "").lower() else "")
-            button.setStyleSheet(
-                f"QToolButton {{ background: {color}; color: {text_color(color)}; "
-                "border: 1px solid #7b8898; border-radius: 3px; font-weight: bold; }"
-                "QToolButton:hover, QToolButton:focus { border: 3px solid #17202b; }"
-            )
             button.clicked.connect(lambda checked=False, value=(name, color): self.choose(value))
             grid.addWidget(button, n // 4, n % 4)
             self.swatches.append(button)
@@ -78,6 +76,16 @@ class ColorPalette(QFrame):
         clear = QPushButton("No color")
         clear.clicked.connect(lambda: self.choose(None))
         layout.addWidget(clear)
+        self.apply_theme()
+
+    def apply_theme(self):
+        for button in self.swatches:
+            tint = row_color(button.property("color"))
+            button.setStyleSheet(
+                f"QToolButton {{ background: {tint}; color: {text_color(tint)}; "
+                f"border: 1px solid {theme_color('strong_border')}; border-radius: 3px; font-weight: bold; }}"
+                f"QToolButton:hover, QToolButton:focus {{ border: 3px solid {theme_color('accent')}; }}"
+            )
 
     def choose(self, value):
         self.close()

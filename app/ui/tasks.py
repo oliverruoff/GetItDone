@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from app.ui.colors import display_color, text_color
 from app.ui.completion import CompletionOverlay
 from app.ui.icons import icon, icon_button
+from app.ui.theme import color, is_dark, row_color, styled
 
 ROLE = Qt.UserRole
 
@@ -85,7 +86,7 @@ class ItemDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
         cell = QStyleOptionViewItem(option)
         self.initStyleOption(cell, index)
-        background = index.data(ROLE + 2) or QColor("#ffffff")
+        background = index.data(ROLE + 2) or QColor(color("base"))
         painter.save()
         painter.fillRect(cell.rect, background)
         cell.state &= ~(QStyle.State_Selected | QStyle.State_HasFocus)
@@ -115,19 +116,19 @@ class ItemDelegate(QStyledItemDelegate):
             indicator = self.cell_style.subElementRect(
                 QStyle.SE_ItemViewItemCheckIndicator, cell, cell.widget
             )
-            painter.setBrush(QColor("#ffffff"))
-            painter.setPen(QPen(QColor("#62768d"), 1.4))
+            painter.setBrush(QColor(color("base")))
+            painter.setPen(QPen(QColor(color("strong_border")), 1.4))
             painter.drawRoundedRect(indicator.adjusted(1, 1, -1, -1), 2, 2)
             if cell.checkState == Qt.Checked:
-                painter.setPen(QPen(QColor("#244e79"), 2.4))
+                painter.setPen(QPen(QColor(color("accent")), 2.4))
                 center = indicator.center()
                 painter.drawLine(center.x() - 5, center.y(), center.x() - 1, center.y() + 4)
                 painter.drawLine(center.x() - 1, center.y() + 4, center.x() + 6, center.y() - 5)
-        painter.setPen(QColor("#cbd4e0"))
+        painter.setPen(QColor(color("border")))
         painter.setBrush(Qt.NoBrush)
         painter.drawLine(cell.rect.bottomLeft(), cell.rect.bottomRight())
         if index.siblingAtColumn(0).data(ROLE + 1) == "item" and index.data(ROLE + 3) == 0:
-            painter.setPen(QPen(QColor("#9aaec7"), 2))
+            painter.setPen(QPen(QColor(color("strong_border")), 2))
             painter.drawLine(cell.rect.topLeft(), cell.rect.topRight())
         painter.restore()
 
@@ -154,9 +155,9 @@ class ItemDelegate(QStyledItemDelegate):
         parts.append(html.escape(source[end:]))
         text = "".join(parts).replace("\n", "<br>")
         foreground = index.data(Qt.ForegroundRole)
-        color = foreground.color().name() if foreground else "#000000"
+        ink = foreground.color().name() if foreground else color("text")
         document.setDefaultStyleSheet(
-            f"body {{color: {color};}} a {{color: {color}; text-decoration: underline;}}"
+            f"body {{color: {ink};}} a {{color: {ink}; text-decoration: underline;}}"
         )
         document.setHtml("<body>" + text + "</body>")
         document.setDocumentMargin(0)
@@ -412,8 +413,8 @@ class TaskTree(QTreeWidget):
         preview.setText(0, "Move here as child" if parent else "Move here")
         preview.setSizeHint(0, QSize(100, max(28, min(56, self.visualItemRect(self.drag_source()).height()))))
         for column in range(self.columnCount()):
-            preview.setData(column, ROLE + 2, QColor("#dbeafe"))
-            preview.setForeground(column, QBrush(QColor("#244e79")))
+            preview.setData(column, ROLE + 2, QColor(color("selection")))
+            preview.setForeground(column, QBrush(QColor(color("accent_text"))))
         self.drop_preview, self.preview_target = preview, destination
         container.insertChild(insertion, preview)
         if parent_row is not None and not parent_row.isExpanded():
@@ -474,9 +475,9 @@ class TaskTree(QTreeWidget):
 
     def drawBranches(self, painter, rect, index):
         if index.data(ROLE + 1) == "add":
-            painter.fillRect(rect, QColor("#ffffff"))
+            painter.fillRect(rect, QColor(color("base")))
             return
-        background = index.data(ROLE + 2) or QColor("#ffffff")
+        background = index.data(ROLE + 2) or QColor(color("base"))
         painter.fillRect(rect, background)
         super().drawBranches(painter, rect, index)
 
@@ -601,9 +602,7 @@ class Tasks(QWidget):
         self.tree.customContextMenuRequested.connect(self.menu)
         self.link_toast = QLabel("URL copied to clipboard", self.tree.viewport())
         self.link_toast.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.link_toast.setStyleSheet(
-            "background: #243247; color: white; padding: 8px 14px; border-radius: 6px;"
-        )
+        styled(self.link_toast, "background: $toast; color: $toast_text; padding: 8px 14px; border-radius: 6px;")
         self.link_toast.hide()
         self.link_toast_timer = QTimer(self)
         self.link_toast_timer.setSingleShot(True)
@@ -749,7 +748,7 @@ class Tasks(QWidget):
                 row.setTextAlignment(3, Qt.AlignCenter)
                 row.setSizeHint(0, QSize(100, 28))
                 if ident not in direct:
-                    row.setForeground(0, QBrush(QColor("#737d8c")))
+                    row.setForeground(0, QBrush(QColor(color("muted"))))
                 font = row.font(0)
                 font.setStrikeOut(item["done"])
                 font.setBold(False)
@@ -757,8 +756,8 @@ class Tasks(QWidget):
                 font.setItalic(ident not in direct)
                 row.setFont(0, font)
                 cat = cats.get(item["category_id"])
-                tint = QColor(display_color(cat["color"]) if cat else "#e8edf5" if depth == 0 else "#ffffff")
-                foreground = text_color(tint.name())
+                tint = QColor(row_color(display_color(cat["color"])) if cat else color("root" if depth == 0 else "base"))
+                foreground = color("text") if is_dark() else text_color(tint.name())
                 for column in range(self.tree.columnCount()):
                     row.setData(column, ROLE + 2, tint)
                     row.setData(column, ROLE + 3, depth)
@@ -811,7 +810,7 @@ class Tasks(QWidget):
                     for button in [category_button, reminder_button, *actions.findChildren(QPushButton)]:
                         button.setStyleSheet(
                             f"QPushButton {{ background: {tint.name()}; color: {foreground}; border: none; border-radius: 0; padding: 2px; }}"
-                            "QPushButton:hover { border: 1px solid #46627e; background: rgba(255,255,255,45); }"
+                            f"QPushButton:hover {{ border: 1px solid {color('accent')}; background: rgba(255,255,255,20); }}"
                             "QPushButton:pressed { background: rgba(0,0,0,25); }"
                         )
                 self.tree.setItemWidget(row, 4, actions)
@@ -859,8 +858,8 @@ class Tasks(QWidget):
                 plus.setFixedHeight(20)
                 plus.setMinimumWidth(24)
                 plus.setMaximumWidth(16777215)
-                plus.setStyleSheet("QPushButton { border: none; background: transparent; padding: 1px; }"
-                                  "QPushButton:hover { background: #e8edf5; }")
+                styled(plus, "QPushButton { border: none; background: transparent; padding: 1px; }"
+                             "QPushButton:hover { background: $root; }")
                 strip = QWidget()
                 strip_layout = QHBoxLayout(strip)
                 strip_layout.setContentsMargins(0, 0, 0, 0)
@@ -939,9 +938,7 @@ class Tasks(QWidget):
             return
         notice = QFrame()
         notice.setObjectName("undoNotice")
-        notice.setStyleSheet(
-            "QFrame#undoNotice { background: #eaf5ef; border: 1px solid #a5c9b4; border-radius: 6px; }"
-        )
+        styled(notice, "QFrame#undoNotice { background: $success_bg; border: 1px solid $success_border; border-radius: 6px; }")
         line = QHBoxLayout(notice)
         line.setContentsMargins(12, 6, 8, 6)
         text = item["text"]
@@ -1025,7 +1022,7 @@ class Tasks(QWidget):
             overdue = when <= datetime.now(timezone.utc) and not item["done"]
             row.setText(2, ("Overdue · " if overdue else "") + when.strftime("%d %b %H:%M"))
             row.setToolTip(2, when.strftime("%d %b %Y %H:%M %Z"))
-            row.setForeground(2, QBrush(QColor("#a44b26" if overdue else "#445165")))
+            row.setForeground(2, QBrush(QColor(color("warning" if overdue else "muted"))))
 
         button = self.tree.itemWidget(row, 2)
         if isinstance(button, QPushButton):

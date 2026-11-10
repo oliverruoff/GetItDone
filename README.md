@@ -8,6 +8,10 @@ GetItDone is your local work notebook for macOS and Windows. Break tasks into sm
 
 The screenshots show the macOS interface with example data.
 
+**File → Settings → Appearance** lets you switch between Light and the
+Everforest dark theme. Save to apply it immediately to menus, dialogs, task colors
+and integrated terminals; your choice is kept for the next launch.
+
 ## Canvas
 
 The **Canvas** tab displays a freely editable local HTML page. Use **Open agent …**

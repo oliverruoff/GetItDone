@@ -54,7 +54,8 @@ class AgentContextPanel(QWidget):
             "Loaded in session: not reported by these CLIs. Skills are available on demand. MCP connection status is shown when reported. Instructions below are local sources for this folder; a running session may have an older snapshot or extra CLI instructions."
         )
         explanation.setWordWrap(True)
-        explanation.setStyleSheet("color:#697586;font-size:11px")
+        explanation.setProperty("muted", True)
+        explanation.setStyleSheet("font-size:11px")
         layout.addWidget(explanation)
         self.tabs = QTabWidget()
         self.lists = {}

@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSplitter, QTabWidget, QVBoxLayout, QWidget
@@ -8,6 +8,7 @@ from app.canvas import prepare_canvas
 from app.terminal.bridge import Terminal
 from app.ui.common import Job, confirm, error
 from app.ui.dialogs import SessionDialog
+from app.ui.theme import color, is_dark
 
 
 class CanvasPage(QWebEnginePage):
@@ -31,6 +32,7 @@ class Canvas(QWidget):
         self.view.setPage(CanvasPage(self.view))
         self.view.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, False)
         self.view.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, False)
+        self.apply_theme()
         self.splitter = QSplitter(Qt.Vertical)
         self.splitter.addWidget(self.view)
         self.tabs = QTabWidget()
@@ -59,6 +61,13 @@ class Canvas(QWidget):
         self.timer.timeout.connect(self.queue_check_changes)
         self.timer.start()
         QTimer.singleShot(0, self.queue_check_changes)
+
+    def apply_theme(self):
+        self.view.page().setBackgroundColor(QColor(color("base")))
+        # Rendering only: never rewrite the user's HTML or CSS on disk.
+        force_dark = getattr(QWebEngineSettings.WebAttribute, "ForceDarkMode", None)
+        if force_dark is not None:
+            self.view.settings().setAttribute(force_dark, is_dark())
 
     def open_agent(self):
         dialog = SessionDialog(self.session_settings, self, fixed_directory=self.folder.resolve())

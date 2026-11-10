@@ -6,6 +6,13 @@ const terminal = new Terminal({cursorBlink:true, scrollback:3000, fontSize:13,
 const fit = new FitAddon.FitAddon();
 terminal.loadAddon(fit);
 terminal.open(document.getElementById('terminal'));
+const defaultTheme = terminal.options.theme;
+window.setTerminalTheme = theme => {
+  terminal.options.theme = {...defaultTheme, ...theme};
+  document.documentElement.style.background = theme.background;
+  document.body.style.background = theme.background;
+  document.getElementById('terminal').style.background = theme.background;
+};
 new QWebChannel(qt.webChannelTransport, channel => {
   const bridge = channel.objects.bridge;
   bridge.output_ready.connect(text => terminal.write(text));

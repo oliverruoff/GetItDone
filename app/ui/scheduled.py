@@ -37,6 +37,7 @@ from app.models import uid
 from app.session_paths import session_folder
 from app.ui.common import confirm
 from app.ui.icons import icon_button
+from app.ui.theme import color
 
 
 def readable_output(run, raw=False):
@@ -169,7 +170,8 @@ class Scheduled(QWidget):
         self.actions["New scheduled task"] = new
         left.addWidget(new)
         hint = QLabel("Schedules run while GetItDone is open,\nincluding in the background. All times are local.")
-        hint.setStyleSheet("color: #64738b; font-size: 11px;")
+        hint.setProperty("muted", True)
+        hint.setStyleSheet("font-size: 11px;")
         hint.setWordWrap(True)
         left.addWidget(hint)
         split.addWidget(sidebar)
@@ -222,7 +224,8 @@ class Scheduled(QWidget):
         history_title.setStyleSheet("font-weight: 600; padding-top: 8px;")
         history_header.addWidget(history_title)
         self.summary = QLabel()
-        self.summary.setStyleSheet("color: #52647e; padding-top: 8px;")
+        self.summary.setProperty("muted", True)
+        self.summary.setStyleSheet("padding-top: 8px;")
         history_header.addWidget(self.summary)
         history_header.addStretch()
         right.addLayout(history_header)
@@ -232,7 +235,6 @@ class Scheduled(QWidget):
         self.runs.setRootIsDecorated(False)
         self.runs.setSelectionMode(QAbstractItemView.SingleSelection)
         self.runs.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.runs.setStyleSheet("QTreeWidget::item:selected { background: #dce9f7; color: #172b43; }")
         self.runs.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.runs.setAlternatingRowColors(True)
         self.runs.setMinimumHeight(110)
@@ -261,7 +263,7 @@ class Scheduled(QWidget):
         self.run_info = QLabel()
         self.run_info.setTextFormat(Qt.PlainText)
         self.run_info.setWordWrap(True)
-        self.run_info.setStyleSheet("color: #52647e;")
+        self.run_info.setProperty("muted", True)
         output_layout.addWidget(self.run_info)
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
@@ -376,8 +378,8 @@ class Scheduled(QWidget):
                                        self.local_time(run.get("finished_at")), self.duration(run),
                                        run["status"].capitalize()])
                 row.setData(0, Qt.UserRole, run["id"])
-                color = {"completed": "#28714c", "failed": "#a63434", "running": "#23588b"}.get(run["status"], "#64738b")
-                row.setForeground(4, QColor(color))
+                ink = color({"completed": "success", "failed": "error", "running": "accent_text"}.get(run["status"], "muted"))
+                row.setForeground(4, QColor(ink))
                 self.runs.addTopLevelItem(row)
                 if run["id"] == selected:
                     self.runs.setCurrentItem(row)

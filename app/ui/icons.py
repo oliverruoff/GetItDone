@@ -1,9 +1,9 @@
 """Small native-rendered line icons; accessible button names remain explicit."""
 
 from PySide6.QtCore import QByteArray, Qt
-from PySide6.QtGui import QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QAbstractButton, QPushButton, QWidget
 
 PATHS = {
     "stop": '<rect x="5" y="5" width="14" height="14" rx="1"/>',
@@ -31,17 +31,34 @@ PATHS = {
 }
 
 
-def icon(name, color="#34445b"):
+_THEMED_ICONS = {}
+_ICON_CACHE = {}
+
+
+def icon(name, color=None):
+    themed = color is None
+    if themed:
+        from app.ui.theme import color as theme_color
+
+        color = theme_color("icon")
+    key = (name, color, themed)
+    if key in _ICON_CACHE:
+        return QIcon(_ICON_CACHE[key])
     svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">{PATHS[name]}</svg>'
     pixmap = QPixmap(24, 24)
     pixmap.fill(Qt.transparent)
     painter = QPainter(pixmap)
     QSvgRenderer(QByteArray(svg.encode())).render(painter)
     painter.end()
-    return QIcon(pixmap)
+    result = QIcon(pixmap)
+    if themed:
+        _THEMED_ICONS[result.cacheKey()] = name
+    if len(_ICON_CACHE) < 256:
+        _ICON_CACHE[key] = result
+    return result
 
 
-def icon_button(name, label, callback, color="#34445b"):
+def icon_button(name, label, callback, color=None):
     button = QPushButton()
     button.setIcon(icon(name, color))
     button.setAccessibleName(label)
@@ -49,3 +66,12 @@ def icon_button(name, label, callback, color="#34445b"):
     button.setFixedSize(32, 28)
     button.clicked.connect(callback)
     return button
+
+
+def refresh_icons(widget):
+    # Some panels use `actions` for their own button dictionary.
+    for target in [widget, *QWidget.actions(widget)]:
+        if isinstance(target, (QAbstractButton, QAction)):
+            name = _THEMED_ICONS.get(target.icon().cacheKey())
+            if name:
+                target.setIcon(icon(name))
