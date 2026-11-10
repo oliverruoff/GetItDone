@@ -5,23 +5,34 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QPushButton, QToolButton, QVBoxLayout
 
 PALETTE = (
-    ("Red", "#f6cccc"),
-    ("Orange", "#f8dcc4"),
-    ("Amber", "#f7e5bc"),
-    ("Yellow", "#faf0bd"),
-    ("Lime", "#e6edc3"),
-    ("Green", "#d1ead3"),
-    ("Emerald", "#c6e6d9"),
-    ("Teal", "#c9e8e3"),
-    ("Cyan", "#ceeef3"),
-    ("Sky", "#d3e7fa"),
-    ("Blue", "#d1dcf5"),
-    ("Indigo", "#dcd5f0"),
-    ("Violet", "#e7d4f1"),
-    ("Magenta", "#f0d0e5"),
-    ("Rose", "#f6dce2"),
-    ("Slate", "#dfe5ec"),
+    ("Red", "#f4c2c2"),
+    ("Orange", "#f7d5b8"),
+    ("Amber", "#f5e0af"),
+    ("Yellow", "#f9edb0"),
+    ("Lime", "#e1e9b7"),
+    ("Green", "#c8e6ca"),
+    ("Emerald", "#bbe1d1"),
+    ("Teal", "#bee3dd"),
+    ("Cyan", "#c4ebf1"),
+    ("Sky", "#cae2f9"),
+    ("Blue", "#c8d5f3"),
+    ("Indigo", "#d5cded"),
+    ("Violet", "#e2cbee"),
+    ("Magenta", "#edc7e0"),
+    ("Rose", "#f4d5dc"),
+    ("Slate", "#d9e0e8"),
 )
+
+# Display older palette assignments consistently without rewriting saved categories.
+PREVIOUS_COLORS = (
+    "#f6cccc", "#f8dcc4", "#f7e5bc", "#faf0bd", "#e6edc3", "#d1ead3", "#c6e6d9", "#c9e8e3",
+    "#ceeef3", "#d3e7fa", "#d1dcf5", "#dcd5f0", "#e7d4f1", "#f0d0e5", "#f6dce2", "#dfe5ec",
+)
+_DISPLAY_COLORS = dict(zip(PREVIOUS_COLORS, (color for _, color in PALETTE), strict=True))
+
+
+def display_color(color):
+    return _DISPLAY_COLORS.get(color.lower(), color)
 
 
 def text_color(background):
@@ -54,7 +65,7 @@ class ColorPalette(QFrame):
             button.setAccessibleName(name)
             button.setToolTip(name)
             button.setProperty("color", color)
-            button.setText("✓" if color.lower() == (current or "").lower() else "")
+            button.setText("✓" if color.lower() == display_color(current or "").lower() else "")
             button.setStyleSheet(
                 f"QToolButton {{ background: {color}; color: {text_color(color)}; "
                 "border: 1px solid #7b8898; border-radius: 3px; font-weight: bold; }"

@@ -153,6 +153,7 @@ def create_backup(data, data_folder, now=None):
 class BackupScheduler(QObject):
     changed = Signal()
     status = Signal(str)
+    completed = Signal(str)
 
     def __init__(self, notebook, data_folder, prepare, persist, launch, parent=None):
         super().__init__(parent)
@@ -225,6 +226,7 @@ class BackupScheduler(QObject):
                 self.persist()
                 self.status.emit("Backup saved: " + path)
                 self.changed.emit()
+                self.completed.emit(path)
 
         self.launch(lambda: create_backup(snapshot, self.data_folder, now), finished)
         return True

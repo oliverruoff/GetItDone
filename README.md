@@ -170,10 +170,14 @@ For a `.venv` setup instead of pipx, use its Python for `-m pip install -e ".[de
 To create your first tasks:
 
 1. In the **Tasks** tab, click **+ Add item** at the bottom.
-2. Type a task. Press **Enter** to create the next task at the same level.
+2. Type a task. Press **Enter** to save the text and finish editing without creating another task.
 3. Open **… → + Add child item** on a task to break it into smaller steps.
 4. Add a note, color, or reminder as needed.
 5. Tick the checkbox when the task is complete.
+
+Tasks with direct subtasks show their count at the right edge of the title. Tasks without subtasks show no count; notes and agent sessions are not counted. Normal task titles have no hover tooltip.
+
+The row-color palette uses slightly stronger, still-soft shades. Existing standard palette assignments use the updated shades automatically; saved category names, IDs and custom colors stay unchanged.
 
 Changes are saved automatically. **All changes saved** at the bottom confirms that your current work has been saved.
 
@@ -309,7 +313,7 @@ Click the task you want to work with first. These shortcuts apply in the task li
 
 | Key | Action |
 | --- | --- |
-| **Enter** | Create the next task at the same level |
+| **Enter** | Finish editing; when not editing, create the next task at the same level |
 | **F2** | Edit the task title |
 | **Tab** | Indent the task |
 | **Shift + Tab** | Outdent the task |
@@ -356,6 +360,8 @@ For an independent backup, quit the app and back up both the data folder shown i
 Open **File → Settings → Backups**, select **Enable automatic full backups**, choose a local time, an interval (**every N days, weeks or months**) and a destination folder, then **Save**. For daily backups, choose **Every 1 day**. The destination must be outside the notebook data and Knowledge folders; a missing destination folder is created at backup time.
 
 The default destination is **Documents/GetItDone/Backups** (using your system's Documents location). An existing custom destination is kept. Click **Backup now** to create a full backup immediately in the folder currently shown, even when automatic backups are disabled. This does not change the automatic schedule or apply other unsaved settings. The button is disabled while a backup is running; manual errors are displayed without starting automatic retries.
+
+After each successful manual or scheduled full backup, GetItDone sends a brief system notification, also while the window is hidden. System notification permissions and Focus / Do Not Disturb settings may suppress the banner.
 
 The first backup runs at the next selected time (today or tomorrow), then repeats at the chosen interval. **GetItDone must be running**, including hidden in the tray/menu bar. After sleep or a fully closed app, one missed backup is caught up when the app runs again; it does not create an archive for every missed day. Enable startup at login if desired. Backup failures are shown in the bottom bar and **Settings → Backups**, and retried after five minutes without skipping the missed backup.
 

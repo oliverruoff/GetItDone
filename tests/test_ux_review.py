@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLineEdit, QPlainTextEdit
+from PySide6.QtWidgets import QAbstractItemView, QLineEdit, QPlainTextEdit
 
 from app.models import Notebook
 from app.storage import Store
@@ -24,6 +24,10 @@ def test_expanded_title_newline_and_cancel_empty_draft(qtbot, tmp_path):
         assert item['text'] == 'First line\nSecond line'
         assert len(book.items) == 1
         qtbot.keyClick(editor, Qt.Key_Return)
+        qtbot.waitUntil(lambda: window.tasks.tree.state() != QAbstractItemView.EditingState)
+        assert len(book.items) == 1
+        assert item['text'] == 'First line\nSecond line'
+        window.add_item()
         qtbot.waitUntil(lambda: len(book.items) == 2)
         next_editor = window.tasks.tree.findChild(QLineEdit)
         qtbot.keyClick(next_editor, Qt.Key_Escape)

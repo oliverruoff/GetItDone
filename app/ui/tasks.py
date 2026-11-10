@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.ui.colors import text_color
+from app.ui.colors import display_color, text_color
 from app.ui.completion import CompletionOverlay
 from app.ui.icons import icon, icon_button
 
@@ -73,7 +73,7 @@ class TaskTextEdit(QPlainTextEdit):
 
 
 class ItemDelegate(QStyledItemDelegate):
-    next_item = Signal(bool, bool)
+    indent_requested = Signal(bool)
     escape_pressed = Signal(str)
     text_edited = Signal(str, str)
     lines_pasted = Signal(str, str)
@@ -95,7 +95,7 @@ class ItemDelegate(QStyledItemDelegate):
             cell.text = ""
         self.cell_style.drawControl(QStyle.CE_ItemViewItem, cell, painter, cell.widget)
         if title:
-            rect = self.cell_style.subElementRect(QStyle.SE_ItemViewItemText, cell, cell.widget)
+            rect = self.title_rect(cell, index)
             document = self.title_document(index, rect.width())
             painter.save()
             painter.setClipRect(rect)
@@ -104,6 +104,13 @@ class ItemDelegate(QStyledItemDelegate):
             )
             document.drawContents(painter)
             painter.restore()
+            count = index.data(ROLE + 6)
+            if count:
+                count_rect = self.cell_style.subElementRect(QStyle.SE_ItemViewItemText, cell, cell.widget)
+                count_rect.setLeft(rect.right() + 8)
+                painter.setFont(cell.font)
+                painter.setPen(cell.palette.text().color())
+                painter.drawText(count_rect, Qt.AlignRight | Qt.AlignVCenter, count)
         if cell.features & QStyleOptionViewItem.HasCheckIndicator:
             indicator = self.cell_style.subElementRect(
                 QStyle.SE_ItemViewItemCheckIndicator, cell, cell.widget
@@ -123,6 +130,13 @@ class ItemDelegate(QStyledItemDelegate):
             painter.setPen(QPen(QColor("#9aaec7"), 2))
             painter.drawLine(cell.rect.topLeft(), cell.rect.topRight())
         painter.restore()
+
+    def title_rect(self, cell, index):
+        rect = self.cell_style.subElementRect(QStyle.SE_ItemViewItemText, cell, cell.widget)
+        count = index.data(ROLE + 6)
+        if count:
+            rect.adjust(0, 0, -(cell.fontMetrics.horizontalAdvance(count) + 12), 0)
+        return rect
 
     def title_document(self, index, width):
         document = QTextDocument()
@@ -162,7 +176,7 @@ class ItemDelegate(QStyledItemDelegate):
                 parent = parent.parent()
             indentation = tree.indentation() * (depth + int(tree.rootIsDecorated()))
             cell.rect.setWidth(max(0, tree.columnWidth(0) - indentation))
-            rect = self.cell_style.subElementRect(QStyle.SE_ItemViewItemText, cell, cell.widget)
+            rect = self.title_rect(cell, index)
             size.setHeight(
                 max(size.height(), math.ceil(self.title_document(index, rect.width()).size().height()) + 6)
             )
@@ -171,7 +185,7 @@ class ItemDelegate(QStyledItemDelegate):
     def updateEditorGeometry(self, editor, option, index):
         cell = QStyleOptionViewItem(option)
         self.initStyleOption(cell, index)
-        rect = self.cell_style.subElementRect(QStyle.SE_ItemViewItemText, cell, cell.widget)
+        rect = self.title_rect(cell, index)
         rect = rect.adjusted(0, 2, -2, -2)
         if isinstance(editor, QLineEdit):
             rect.setHeight(editor.fontMetrics().height() + 8)
@@ -182,7 +196,7 @@ class ItemDelegate(QStyledItemDelegate):
             return ""
         cell = QStyleOptionViewItem(option)
         self.initStyleOption(cell, index)
-        rect = self.cell_style.subElementRect(QStyle.SE_ItemViewItemText, cell, cell.widget)
+        rect = self.title_rect(cell, index)
         if not rect.contains(position.toPoint()):
             return ""
         point = position - rect.topLeft()
@@ -267,7 +281,8 @@ class ItemDelegate(QStyledItemDelegate):
             backwards = key == Qt.Key_Backtab or bool(event.modifiers() & Qt.ShiftModifier)
             self.commitData.emit(editor)
             self.closeEditor.emit(editor, QAbstractItemDelegate.NoHint)
-            QTimer.singleShot(0, lambda: self.next_item.emit(key in (Qt.Key_Tab, Qt.Key_Backtab), backwards))
+            if key in (Qt.Key_Tab, Qt.Key_Backtab):
+                QTimer.singleShot(0, lambda: self.indent_requested.emit(backwards))
             return True
         return super().eventFilter(editor, event)
 
@@ -572,7 +587,7 @@ class Tasks(QWidget):
         self.tree.itemClicked.connect(self.status_clicked)
         delegate = ItemDelegate(self.tree)
         delegate.escape_pressed.connect(self.escape_pressed)
-        delegate.next_item.connect(self.editor_next)
+        delegate.indent_requested.connect(self.indent_requested)
         delegate.text_edited.connect(self.edit_text)
         delegate.lines_pasted.connect(self.paste_lines)
         self.tree.setItemDelegate(delegate)
@@ -687,12 +702,6 @@ class Tasks(QWidget):
         self.update_expansion_button()
         self.save_view()
 
-    def editor_next(self, indent, backwards):
-        if indent:
-            self.indent_requested.emit(backwards)
-        else:
-            self.new_requested.emit(False)
-
     def refresh_categories(self):
         pass  # Row colors remain available; color filtering has been removed.
 
@@ -728,6 +737,8 @@ class Tasks(QWidget):
                 row.setData(0, ROLE, ident)
                 row.setData(0, ROLE + 1, "item")
                 row.setData(0, ROLE + 5, ident in self.titles_open)
+                children = self.notebook.children(ident)
+                row.setData(0, ROLE + 6, str(len(children)) if children else "")
                 rail = accent or QColor(
                     ("#4d729c", "#8a649c", "#408b81", "#ac784d", "#89764f", "#637fa3")[number % 6]
                 )
@@ -737,15 +748,8 @@ class Tasks(QWidget):
                 row.setTextAlignment(0, Qt.AlignLeft | Qt.AlignVCenter)
                 row.setTextAlignment(3, Qt.AlignCenter)
                 row.setSizeHint(0, QSize(100, 28))
-                row.setToolTip(
-                    0,
-                    "Checkbox: complete · Double-click: edit text\n"
-                    + item["text"]
-                    + ("\n\n" + item["notes"] if item["notes"] else ""),
-                )
                 if ident not in direct:
                     row.setForeground(0, QBrush(QColor("#737d8c")))
-                    row.setToolTip(0, "Parent context · " + row.toolTip(0))
                 font = row.font(0)
                 font.setStrikeOut(item["done"])
                 font.setBold(False)
@@ -753,7 +757,7 @@ class Tasks(QWidget):
                 font.setItalic(ident not in direct)
                 row.setFont(0, font)
                 cat = cats.get(item["category_id"])
-                tint = QColor(cat["color"] if cat else "#e8edf5" if depth == 0 else "#ffffff")
+                tint = QColor(display_color(cat["color"]) if cat else "#e8edf5" if depth == 0 else "#ffffff")
                 foreground = text_color(tint.name())
                 for column in range(self.tree.columnCount()):
                     row.setData(column, ROLE + 2, tint)
@@ -878,7 +882,7 @@ class Tasks(QWidget):
         )
         if not self.notebook.items:
             self.summary.setText(
-                "Start with “+ Add item” · Enter: next item · Tab / Shift+Tab: indent / outdent · Double-click: edit"
+                "Start with “+ Add item” · Enter: finish editing · Tab / Shift+Tab: indent / outdent · Double-click: edit"
             )
 
     def cancel_completion_animation(self, *args):

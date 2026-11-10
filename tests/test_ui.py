@@ -127,9 +127,9 @@ def test_tray_visibility_keeps_process_and_marks_hidden_output(qtbot, tmp_path):
     window.quitting = True
 
 
-def test_keyboard_enter_adds_sibling_and_tab_indents(qtbot, tmp_path):
+def test_keyboard_enter_finishes_editing_and_tab_indents(qtbot, tmp_path):
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QLineEdit
+    from PySide6.QtWidgets import QAbstractItemView, QLineEdit
 
     store = Store(tmp_path)
     window = Window(store, store.load())
@@ -141,8 +141,11 @@ def test_keyboard_enter_adds_sibling_and_tab_indents(qtbot, tmp_path):
     editor.selectAll()
     qtbot.keyClicks(editor, "First item")
     qtbot.keyClick(editor, Qt.Key_Return)
-    qtbot.waitUntil(lambda: len(window.notebook.items) == 2)
+    qtbot.waitUntil(lambda: window.tasks.tree.state() != QAbstractItemView.EditingState)
+    qtbot.waitUntil(lambda: window.tasks.tree.findChild(QLineEdit) is None)
+    assert len(window.notebook.items) == 1
     assert window.notebook.items[0]["text"] == "First item"
+    window.add_item()
     editor = window.tasks.tree.findChild(QLineEdit)
     editor.selectAll()
     qtbot.keyClicks(editor, "Second item")

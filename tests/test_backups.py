@@ -176,9 +176,12 @@ def test_scheduler_exact_time_catchup_restart_and_disabled(tmp_path):
 def test_failure_retries_and_does_not_advance_schedule(tmp_path):
     book, now = configured(tmp_path)
     scheduler, workers, _ = scheduler_for(book, tmp_path)
+    completed = []
+    scheduler.completed.connect(completed.append)
     scheduler.tick(now)
     _, callback = workers.pop()
     callback(None, OSError("Network drive unavailable"))
+    assert completed == []
     config = book.data["settings"]["backups"]
     assert config["next_at"] == now.isoformat()
     assert "Network drive" in config["last_error"]
@@ -299,7 +302,7 @@ def test_settings_dialog_saves_backups_and_preserves_unrelated_settings(qtbot, t
     assert "backups" not in book.data["settings"]  # Changes apply only after the owner accepts.
 
 
-def test_window_runs_real_background_backup_of_current_notes(qtbot, tmp_path):
+def test_window_runs_real_background_backup_of_current_notes(qtbot, tmp_path, monkeypatch):
     from app.ui.window import Window
 
     store = Store(tmp_path / "data")
@@ -312,6 +315,8 @@ def test_window_runs_real_background_backup_of_current_notes(qtbot, tmp_path):
     data["settings"]["knowledge_folder"] = str(knowledge)
     window = Window(store, data)
     qtbot.addWidget(window)
+    notifications = []
+    monkeypatch.setattr(window.notifier, "send", notifications.append)
     window.timer.stop()
     window.show()
     window.knowledge.files.setCurrentRow(0)
@@ -326,6 +331,9 @@ def test_window_runs_real_background_backup_of_current_notes(qtbot, tmp_path):
         assert archive.read("knowledge/Note.txt").decode() == "Latest unsaved text ä"
         assert json.loads(archive.read("notebook.json"))["items"][0]["text"] == "Newest task"
     assert Store(store.folder).load()["settings"]["backups"]["last_file"] == config["last_file"]
+    assert len(notifications) == 1
+    assert notifications[0]["notification_title"] == "GetItDone · Backup"
+    assert notifications[0]["text"] == "Backup created successfully."
     window.tray.hide()
     window.quitting = True
 
@@ -346,6 +354,38 @@ def test_default_folder_is_in_documents_and_created_on_first_backup(tmp_path, mo
     assert book.data["settings"]["backups"]["enabled"] is False
 
 
+@pytest.mark.parametrize("manual", [True, False])
+def test_successful_backup_notifies_while_window_is_hidden(qtbot, tmp_path, monkeypatch, manual):
+    from app.ui.window import Window
+
+    store = Store(tmp_path / "data")
+    store.load()
+    book, now = configured(tmp_path)
+    book.data["settings"]["backups"]["enabled"] = not manual
+    window = Window(store, book.data)
+    qtbot.addWidget(window)
+    window.timer.stop()
+    notifications = []
+    monkeypatch.setattr(window.notifier, "send", notifications.append)
+    try:
+        assert not window.isVisible()
+        if manual:
+            window.backups.backup_now(str(tmp_path / "backups"), now)
+        else:
+            window.backups.tick(now)
+        assert notifications == []
+        qtbot.waitUntil(lambda: not window.backups.active, timeout=10000)
+        assert Path(book.data["settings"]["backups"]["last_file"]).is_file()
+        assert notifications == [{
+            "id": "", "text": "Backup created successfully.", "notification_title": "GetItDone · Backup",
+        }]
+        assert not window.isVisible()
+    finally:
+        window.timer.stop()
+        window.tray.hide()
+        window.quitting = True
+
+
 @pytest.mark.parametrize("folder", ["", "custom"])
 def test_backup_folder_defaults_only_for_empty_destinations(qtbot, tmp_path, monkeypatch, folder):
     default = tmp_path / "Documents" / "GetItDone" / "Backups"
@@ -364,12 +404,16 @@ def test_manual_backup_uses_selected_folder_without_changing_schedule(tmp_path, 
     config["enabled"] = enabled
     original_schedule = {k: config[k] for k in ("enabled", "time", "every", "unit", "folder", "next_at")}
     scheduler, workers, persisted = scheduler_for(book, tmp_path)
+    completed = []
+    scheduler.completed.connect(completed.append)
     selected = tmp_path / "manually selected"
     assert scheduler.backup_now(str(selected), now)
+    assert completed == []
     assert not scheduler.backup_now(str(selected), now)  # Double clicks cannot create parallel backups.
     function, callback = workers.pop()
     file = function()
     callback(file, None)
+    assert completed == [file]
     assert {k: config[k] for k in original_schedule} == original_schedule
     assert config["last_file"] == file
     assert persisted[-1]["settings"]["backups"]["last_at"] == now.isoformat()

@@ -39,7 +39,7 @@ from app.storage import StorageError
 from app.terminal.bridge import Terminal
 from app.ui.agent_context import AgentContextPanel
 from app.ui.canvas import Canvas
-from app.ui.colors import ColorPalette
+from app.ui.colors import ColorPalette, display_color
 from app.ui.common import DismissibleDialog, Job, SafeBrowser, TerminalPopout, confirm, error
 from app.ui.dialogs import ReminderDialog, SessionDialog, SettingsDialog
 from app.ui.executions import Executions
@@ -214,6 +214,10 @@ class Window(QMainWindow):
         self.statusBar().addPermanentWidget(self.backup_status)
         self.backups.changed.connect(self.update_backup_status)
         self.backups.status.connect(lambda text: self.statusBar().showMessage(text, 20000))
+        self.backups.completed.connect(lambda path: self.notifier.send({
+            "id": "", "text": "Backup created successfully.",
+            "notification_title": "GetItDone · Backup",
+        }))
         self.update_backup_status()
         self.scheduled = Scheduled(self.scheduler)
         self.scheduled.session_open.connect(self.resume_session)
@@ -377,7 +381,7 @@ class Window(QMainWindow):
             "⌘/Ctrl+Shift+N — Add child todo\n"
             "⌘/Ctrl+S — Save\n⌘/Ctrl+Q — Quit\n"
             "Alt+Up / Down — Move todo\n"
-            "Todo: Enter — next item; Shift+Enter — new line in expanded titles\n"
+            "Todo: Enter — finish editing (outside editing: next item); Shift+Enter — new line in expanded titles\n"
             "Todo: Tab / Shift+Tab — indent / outdent\n"
             "Todo: Escape — finish editing; double-click / F2 — edit\n"
             "New note: Enter — save; Shift+Enter — new line; Escape — cancel"))
@@ -572,7 +576,7 @@ class Window(QMainWindow):
         if value:
             name, color = value
             cats = self.notebook.data["categories"]
-            category = next((c for c in cats if c["color"].lower() == color.lower()), None)
+            category = next((c for c in cats if display_color(c["color"]).lower() == display_color(color).lower()), None)
             if category is None:
                 category = {"id": uid(), "name": name, "color": color}
                 cats.append(category)

@@ -248,7 +248,7 @@ def test_title_links_open_exact_url_and_escape_html(window, qtbot, monkeypatch):
 @pytest.mark.parametrize("markdown", [False, True])
 def test_long_hyperlinks_are_abbreviated_and_remain_clickable(window, qtbot, monkeypatch, markdown):
     from PySide6.QtGui import QContextMenuEvent
-    from PySide6.QtWidgets import QHeaderView, QStyle, QStyleOptionViewItem
+    from PySide6.QtWidgets import QHeaderView, QStyleOptionViewItem
 
     url = "https://example.com/" + "a" * 240 + "?token=" + "b" * 120
     label = "LongLinkLabel" * 30
@@ -265,13 +265,13 @@ def test_long_hyperlinks_are_abbreviated_and_remain_clickable(window, qtbot, mon
     option = QStyleOptionViewItem()
     option.rect = tree.visualRect(index)
     delegate.initStyleOption(option, index)
-    rect = delegate.cell_style.subElementRect(QStyle.SE_ItemViewItemText, option, tree)
+    rect = delegate.title_rect(option, index)
     doc = delegate.title_document(index, rect.width())
     displayed = label if markdown else url
     assert doc.toPlainText() == displayed[:20] + "..." + displayed[-20:]
     assert row.text(0) == item["text"]
     assert index.data(Qt.EditRole) == item["text"]
-    assert item["text"] in row.toolTip(0)
+    assert row.toolTip(0) == ""
     assert rect.height() >= doc.size().height()
     layout = doc.begin().layout()
     assert layout.lineCount() > 1
