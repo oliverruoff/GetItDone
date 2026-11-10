@@ -48,6 +48,10 @@ listing and visible Canvas asset scans use the existing `Job` worker pool; Qt
 widget construction stays on the GUI thread. Saving and quitting do not load
 unopened tabs.
 
+Canvas gives its WebEngine view a native child surface, without making its
+ancestors native. This keeps the visible main window intact when the first
+browser view initializes GPU rendering, including when the window is maximized.
+
 ## Tasks
 
 - **+ Add item** creates a top-level item. Enter adds a sibling; Tab / Shift+Tab indents/outdents outside multiline notes. Double-click or F2 edits text in place. The expand icon shows the full wrapped title; expanded titles use a multiline editor. HTTP(S) URLs and Markdown links in titles open in the default browser. Task notes span the full row. Their trash icon deletes without confirmation and offers a separate Undo notice. Drag items to reorder or drop onto a parent to nest them; descendants move with their parent. Single clicks keep keyboard focus without a selection outline. The full-width Add item button stays below the list. Row icons provide **Edit note**, **New session** and **More actions**; their tooltips and accessible names explain each action.

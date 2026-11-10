@@ -51,6 +51,64 @@ print('TASKS_ONLY_OK')
     assert "TASKS_ONLY_OK" in result.stdout
 
 
+@pytest.mark.parametrize("maximized", [False, True])
+def test_first_canvas_open_keeps_native_window_alive(tmp_path, maximized):
+    # A fresh process is essential: an earlier WebEngine view can hide the bug.
+    code = """
+import sys
+from pathlib import Path
+from PySide6.QtCore import QEvent, QEventLoop, QObject, QTimer
+from PySide6.QtWidgets import QApplication
+from app.storage import Store
+from app.ui.window import Window
+
+app = QApplication([])
+store = Store(Path(sys.argv[1]))
+window = Window(store, store.load())
+window.showMaximized() if sys.argv[2] == 'True' else window.show()
+app.processEvents()
+native_id = int(window.winId())
+geometry = window.geometry()
+state = window.windowState()
+events = []
+
+class Watcher(QObject):
+    def eventFilter(self, obj, event):
+        if event.type() in (QEvent.Hide, QEvent.WinIdChange):
+            events.append(event.type())
+        return False
+
+watcher = Watcher()
+window.installEventFilter(watcher)
+assert not any(name.startswith('PySide6.QtWebEngine') for name in sys.modules)
+window.workspace.setCurrentIndex(window.optional_pages['canvas']['index'])
+loop = QEventLoop()
+QTimer.singleShot(1500, loop.quit)
+loop.exec()
+canvas = window.optional_pages['canvas']['widget']
+assert canvas is not None
+assert canvas.view.title() == 'GetItDone Canvas'
+assert not events, events
+assert int(window.winId()) == native_id
+assert window.isVisible()
+assert window.geometry() == geometry
+assert window.windowState() == state
+window.workspace.setCurrentIndex(0)
+app.processEvents()
+window.workspace.setCurrentIndex(window.optional_pages['canvas']['index'])
+app.processEvents()
+assert window.optional_pages['canvas']['widget'] is canvas
+assert not events, events
+window.quit_app()
+window.finish_quit()
+print('CANVAS_WINDOW_STABLE_OK')
+"""
+    result = subprocess.run([sys.executable, "-B", "-c", code, str(tmp_path), str(maximized)],
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "CANVAS_WINDOW_STABLE_OK" in result.stdout
+
+
 def test_todos_edit_and_persist_before_optional_tabs_load(window, qtbot):
     window.append_item()
     editor = window.tasks.tree.focusWidget()

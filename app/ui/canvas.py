@@ -29,6 +29,10 @@ class Canvas(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 5, 0, 0)
         self.view = QWebEngineView(self)
+        # Keep WebEngine's GPU surface in a native child. Otherwise the first
+        # lazy-loaded view makes Qt destroy/recreate the visible main window.
+        self.view.setAttribute(Qt.WA_DontCreateNativeAncestors)
+        self.view.setAttribute(Qt.WA_NativeWindow)
         self.view.setPage(CanvasPage(self.view))
         self.view.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, False)
         self.view.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, False)
