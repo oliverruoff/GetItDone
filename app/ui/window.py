@@ -1,5 +1,7 @@
 import json
+import logging
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,21 +38,16 @@ from app.notifications import Notifier
 from app.reminders import Reminders
 from app.scheduling import Scheduler
 from app.storage import StorageError
-from app.terminal.bridge import Terminal
-from app.ui.agent_context import AgentContextPanel
-from app.ui.canvas import Canvas
 from app.ui.colors import ColorPalette, display_color
 from app.ui.common import DismissibleDialog, Job, SafeBrowser, TerminalPopout, confirm, error
 from app.ui.dialogs import ReminderDialog, SessionDialog, SettingsDialog
-from app.ui.executions import Executions
 from app.ui.icons import icon, icon_button
-from app.ui.knowledge import Knowledge
-from app.ui.scheduled import Scheduled
 from app.ui.tasks import Tasks
 
 
 def app_icon():
-    return QIcon(str(Path(__file__).parent / "assets/getitdone.svg"))
+    icon_name = "getitdone.ico" if sys.platform == "win32" else "getitdone.svg"
+    return QIcon(str(Path(__file__).parent / "assets" / icon_name))
 
 
 class Window(QMainWindow):
@@ -94,7 +91,6 @@ class Window(QMainWindow):
         self.draft_items = set()
         self.tasks = Tasks(self.notebook, self.terminals)
         self.tasks.escape_pressed.connect(self.discard_empty_draft)
-        self.inspector = AgentContextPanel(self.notebook.data["settings"], self)
         self.vertical.addWidget(self.tasks)
         self.terminal_panel = QWidget()
         term_layout = QVBoxLayout(self.terminal_panel)
@@ -132,13 +128,20 @@ class Window(QMainWindow):
         self.vertical.setSizes([780, 50])
         self.vertical.setCollapsible(0, False)
         task_layout.addWidget(self.vertical)
-        self.knowledge = Knowledge(self.notebook.data["settings"])
-        self.knowledge.settings_changed.connect(self.schedule_save)
         self.workspace.addTab(self.task_page, "Tasks")
-        self.workspace.addTab(self.knowledge, "Knowledge")
-        self.canvas = Canvas(self.store.folder, self.notebook.data["settings"], self)
-        self.workspace.addTab(self.canvas, "Canvas")
-        self.workspace.addTab(self.inspector, "Agent context")
+        self.optional_pages = {}
+        for name, title in [("knowledge", "Knowledge"), ("canvas", "Canvas"),
+                            ("inspector", "Agent context"), ("scheduled", "Scheduled tasks"),
+                            ("executions", "Agent executions")]:
+            placeholder = QWidget()
+            placeholder_layout = QVBoxLayout(placeholder)
+            placeholder_layout.addWidget(QLabel("Loading " + title + " …"))
+            self.workspace.addTab(placeholder, title)
+            self.optional_pages[name] = {"index": self.workspace.indexOf(placeholder), "widget": None}
+        self.page_loader = QTimer(self)
+        self.page_loader.setSingleShot(True)
+        self.page_loader.setInterval(0)
+        self.page_loader.timeout.connect(self.load_selected_page)
         self.last_workspace = 0
         self.workspace.currentChanged.connect(self.workspace_changed)
         layout.addWidget(self.workspace)
@@ -193,7 +196,7 @@ class Window(QMainWindow):
             )
         )
         self.tray.show()
-        self.notifier = Notifier(self.tray, self)
+        self.notifier = Notifier(self.tray, self, defer=True)
         self.save_status = QLabel("All changes saved")
         self.save_status.setObjectName("saveStatus")
         self.statusBar().addPermanentWidget(self.save_status)
@@ -219,19 +222,10 @@ class Window(QMainWindow):
             "notification_title": "GetItDone · Backup",
         }))
         self.update_backup_status()
-        self.scheduled = Scheduled(self.scheduler)
-        self.scheduled.session_open.connect(self.resume_session)
-        self.scheduled.session_details.connect(self.session_details)
         self.session_tree_refresh = QTimer(self)
         self.session_tree_refresh.setSingleShot(True)
         self.session_tree_refresh.timeout.connect(self.refresh_scheduled_sessions)
         self.scheduler.sessions_changed.connect(lambda: self.session_tree_refresh.start(0))
-        self.workspace.addTab(self.scheduled, "Scheduled tasks")
-        self.executions = Executions(self)
-        self.executions.session_open.connect(self.resume_session)
-        self.executions.session_details.connect(self.session_details)
-        self.executions.scheduled_open.connect(self.open_scheduled_execution)
-        self.workspace.addTab(self.executions, "Agent executions")
         self.execution_indicator = QPushButton("0 agents running")
         self.execution_indicator.setToolTip("Open all agent executions, including scheduled runs and idle terminals")
         self.execution_indicator.clicked.connect(lambda: self.workspace.setCurrentWidget(self.executions))
@@ -265,13 +259,108 @@ class Window(QMainWindow):
         QApplication.instance().applicationStateChanged.connect(self.visibility)
 
     def workspace_changed(self, index):
-        if self.last_workspace == 1 and index != 1 and not self.knowledge.guard():
+        if self.last_workspace == 1 and index != 1 and not self.save_knowledge(guard=True):
             self.workspace.blockSignals(True)
             self.workspace.setCurrentIndex(1)
             self.workspace.blockSignals(False)
             return
         self.last_workspace = index
+        # Let Qt paint the selected tab and dispatch input before optional work.
+        self.page_loader.start()
         self.visibility()
+
+    def load_selected_page(self):
+        self.load_current_page(self.workspace.currentIndex())
+
+    def load_current_page(self, index):
+        if self.quitting or self.workspace.currentIndex() != index:
+            return
+        for name, page in self.optional_pages.items():
+            if page["index"] == index:
+                try:
+                    self.load_page(name)
+                except Exception as exc:
+                    # An optional folder/plugin failure must not take down todos.
+                    logging.exception("Unable to initialize workspace page %s", name)
+                    placeholder = self.workspace.widget(index)
+                    placeholder.findChild(QLabel).setText("Unable to load this tab: " + str(exc))
+                break
+
+    def load_page(self, name):
+        """Import and build optional Qt widgets only when their tab is needed."""
+        page = self.optional_pages[name]
+        if page["widget"] is not None:
+            return page["widget"]
+        settings = self.notebook.data["settings"]
+        if name == "knowledge":
+            from app.ui.knowledge import Knowledge
+
+            widget = Knowledge(settings, background_initial=True)
+            widget.settings_changed.connect(self.schedule_save)
+        elif name == "canvas":
+            from app.ui.canvas import Canvas
+
+            widget = Canvas(self.store.folder, settings, self)
+        elif name == "inspector":
+            from app.ui.agent_context import AgentContextPanel
+
+            widget = AgentContextPanel(settings, self)
+            widget.follow_session(self.session(self.selected_session))
+        elif name == "scheduled":
+            from app.ui.scheduled import Scheduled
+
+            widget = Scheduled(self.scheduler)
+            widget.session_open.connect(self.resume_session)
+            widget.session_details.connect(self.session_details)
+        elif name == "executions":
+            from app.ui.executions import Executions
+
+            widget = Executions(self)
+            widget.session_open.connect(self.resume_session)
+            widget.session_details.connect(self.session_details)
+            widget.scheduled_open.connect(self.open_scheduled_execution)
+            widget.refresh(execution_records(self.notebook, self.terminals))
+        else:
+            raise ValueError("Unknown workspace page: " + name)
+        page["widget"] = widget
+        index = page["index"]
+        placeholder = self.workspace.widget(index)
+        title = self.workspace.tabText(index)
+        current = self.workspace.currentIndex()
+        self.workspace.blockSignals(True)
+        try:
+            self.workspace.removeTab(index)
+            self.workspace.insertTab(index, widget, title)
+            self.workspace.setCurrentIndex(current)
+        finally:
+            self.workspace.blockSignals(False)
+        placeholder.deleteLater()
+        return widget
+
+    @property
+    def knowledge(self):
+        return self.load_page("knowledge")
+
+    @property
+    def canvas(self):
+        return self.load_page("canvas")
+
+    @property
+    def inspector(self):
+        return self.load_page("inspector")
+
+    @property
+    def scheduled(self):
+        return self.load_page("scheduled")
+
+    @property
+    def executions(self):
+        return self.load_page("executions")
+
+    def save_knowledge(self, *, guard=False, interactive=False):
+        widget = self.optional_pages["knowledge"]["widget"]
+        # Saving, backups and shutdown must never initialize an unopened tab.
+        return widget is None or (widget.guard() if guard else widget.save(interactive=interactive))
 
     def schedule_save(self):
         self.flush()
@@ -345,14 +434,14 @@ class Window(QMainWindow):
             return False
 
     def save_all(self):
-        return self.knowledge.save(interactive=True) and self.flush()
+        return self.save_knowledge(interactive=True) and self.flush()
 
     def prepare_backup(self):
         if self.quitting:
             return False
         # Todo edits already update the notebook live; leave keyboard focus untouched.
         self.notebook.data["settings"]["window_geometry"] = bytes(self.saveGeometry().toBase64()).decode()
-        return self.knowledge.save() and self.flush()
+        return self.save_knowledge() and self.flush()
 
     def update_backup_status(self):
         config = backup_defaults() | self.notebook.data["settings"].get("backups", {})
@@ -609,7 +698,9 @@ class Window(QMainWindow):
                 self.notebook.delete_category(ident)
             self.notebook.data["settings"].update(dialog.settings)
             self.notebook.data["categories"] = dialog.categories
-            self.inspector.refresh()
+            inspector = self.optional_pages["inspector"]["widget"]
+            if inspector is not None:
+                inspector.refresh()
             self.tasks.refresh_categories()
             self.tasks.rebuild()
             self.schedule_save()
@@ -647,6 +738,8 @@ class Window(QMainWindow):
                 self.schedule_save()
 
     def launch(self, session, command):
+        from app.terminal.bridge import Terminal
+
         baseline = (
             codex_sessions(session["workdir"])
             if session["agent"] == "codex" and not session.get("native_session_id")
@@ -862,7 +955,9 @@ class Window(QMainWindow):
         self.refresh_context()
 
     def refresh_context(self):
-        self.inspector.follow_session(self.session(self.selected_session))
+        inspector = self.optional_pages["inspector"]["widget"]
+        if inspector is not None:
+            inspector.follow_session(self.session(self.selected_session))
 
     def visibility(self, *args):
         has_terminals = self.tabs.count() > 0
@@ -1104,10 +1199,10 @@ class Window(QMainWindow):
             apply(read(), None)
 
     def refresh_executions(self):
-        if not hasattr(self, "executions"):
-            return
         records = execution_records(self.notebook, self.terminals)
-        self.executions.refresh(records)
+        executions = self.optional_pages["executions"]["widget"]
+        if executions is not None:
+            executions.refresh(records)
         self.tasks.scheduled_runs = {
             run["session_id"]: run for job in self.scheduler.jobs for run in job["runs"] if run.get("session_id")
         }
@@ -1117,9 +1212,9 @@ class Window(QMainWindow):
         live = [r for r in records if r["active"]]
         scheduled = sum(r["origin"] == "Scheduled" for r in live)
         self.execution_indicator.setText(f"{len(live)} running · {scheduled} scheduled" if live else "No agents running")
-        self.workspace.setTabText(self.workspace.indexOf(self.executions),
+        self.workspace.setTabText(self.optional_pages["executions"]["index"],
                                   f"Agent executions ({len(live)})" if live else "Agent executions")
-        self.workspace.setTabText(self.workspace.indexOf(self.scheduled),
+        self.workspace.setTabText(self.optional_pages["scheduled"]["index"],
                                   f"Scheduled tasks ({scheduled})" if scheduled else "Scheduled tasks")
         self.tray.setToolTip(f"GetItDone · {len(live)} running · {scheduled} scheduled")
 
@@ -1217,7 +1312,7 @@ class Window(QMainWindow):
             event.accept()
             return
         event.ignore()
-        if not self.knowledge.save(interactive=True) or not self.flush():
+        if not self.save_knowledge(interactive=True) or not self.flush():
             return
         if QSystemTrayIcon.isSystemTrayAvailable():
             self.hide()
@@ -1228,7 +1323,7 @@ class Window(QMainWindow):
     def quit_app(self):
         if self.quitting:
             return
-        if not self.knowledge.guard():
+        if not self.save_knowledge(guard=True):
             return
         running = [t for t in self.all_terminals() if t.running]
         scheduled_running = len(self.scheduler.active)
@@ -1304,7 +1399,9 @@ class Window(QMainWindow):
             terminal.close()
             terminal.deleteLater()
         self.terminals.clear()
-        self.canvas.terminals.clear()
+        canvas = self.optional_pages["canvas"]["widget"]
+        if canvas is not None:
+            canvas.terminals.clear()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         self.tray.hide()
         self.close()
@@ -1316,4 +1413,5 @@ class Window(QMainWindow):
         QApplication.instance().exit(0)
 
     def all_terminals(self):
-        return [*self.terminals.values(), *self.canvas.terminals]
+        canvas = self.optional_pages["canvas"]["widget"]
+        return [*self.terminals.values(), *(canvas.terminals if canvas is not None else [])]

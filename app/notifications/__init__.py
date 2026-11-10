@@ -2,7 +2,7 @@
 
 import sys
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QSystemTrayIcon
 
 
@@ -11,7 +11,7 @@ class Notifier(QObject):
     status_changed = Signal(str)
     native_result = Signal(str, bool, str)
 
-    def __init__(self, tray, parent=None):
+    def __init__(self, tray, parent=None, *, defer=False):
         super().__init__(parent)
         self.tray = tray
         self.last_item = ""
@@ -21,6 +21,22 @@ class Notifier(QObject):
         self.status_changed.connect(self.set_status)
         self.status = "Use Test notification to verify system notification permissions."
         tray.messageClicked.connect(lambda: self.activated.emit(self.last_item))
+        self.initialized = False
+        self.closed = False
+        self.setup_timer = QTimer(self)
+        self.setup_timer.setSingleShot(True)
+        self.setup_timer.timeout.connect(self.initialize)
+        if defer:
+            self.status = "Checking system notification permissions …"
+            self.setup_timer.start(100)
+        else:
+            self.initialize()
+
+    def initialize(self):
+        if self.initialized or self.closed:
+            return
+        self.initialized = True
+        self.setup_timer.stop()
         if sys.platform == "darwin":
             if getattr(sys, "frozen", False):
                 self.setup_macos()
@@ -39,6 +55,7 @@ class Notifier(QObject):
             self.status = (
                 "System notifications are unavailable. Check your operating system notification settings."
             )
+        self.status_changed.emit(self.status)
 
     def setup_macos(self):
         try:
@@ -93,6 +110,7 @@ class Notifier(QObject):
         return True, "Notifications allowed."
 
     def refresh_permission(self):
+        self.initialize()
         if self.center:
 
             def read(settings):
@@ -102,6 +120,7 @@ class Notifier(QObject):
             self.center.getNotificationSettingsWithCompletionHandler_(read)
 
     def request_permission(self):
+        self.initialize()
         if self.center:
             import UserNotifications as UN
 
@@ -121,10 +140,13 @@ class Notifier(QObject):
         )
 
     def close(self):
+        self.closed = True
+        self.setup_timer.stop()
         if self.windows:
             self.windows.close()
 
     def send(self, item):
+        self.initialize()
         self.last_item = item["id"]
         if sys.platform == "win32":
             try:

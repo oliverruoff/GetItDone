@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSplitter, QTabW
 
 from app.canvas import prepare_canvas
 from app.terminal.bridge import Terminal
-from app.ui.common import confirm, error
+from app.ui.common import Job, confirm, error
 from app.ui.dialogs import SessionDialog
 
 
@@ -50,13 +50,15 @@ class Canvas(QWidget):
         self.agent_button.clicked.connect(self.open_agent)
         footer.addWidget(self.agent_button)
         layout.addLayout(footer)
-        self.snapshot = self.file_snapshot()
+        self.snapshot = None
+        self.scanning = False
         self.reload()
         # Polling also catches atomic replacements and nested asset changes.
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
-        self.timer.timeout.connect(self.check_changes)
+        self.timer.timeout.connect(self.queue_check_changes)
         self.timer.start()
+        QTimer.singleShot(0, self.queue_check_changes)
 
     def open_agent(self):
         dialog = SessionDialog(self.session_settings, self, fixed_directory=self.folder.resolve())
@@ -111,6 +113,21 @@ class Canvas(QWidget):
         if snapshot != self.snapshot:
             self.snapshot = snapshot
             self.reload()
+
+    def queue_check_changes(self):
+        # Never walk a large asset tree in the input/painting thread, or scan
+        # a hidden Canvas while the user is working on todos.
+        if self.scanning or not self.isVisible():
+            return
+        self.scanning = True
+
+        def loaded(snapshot, exc):
+            self.scanning = False
+            if exc is None and snapshot != self.snapshot:
+                self.snapshot = snapshot
+                self.reload()
+
+        Job(self.file_snapshot, loaded, self)
 
     def reload(self):
         url = QUrl.fromLocalFile(str((self.folder / "canvas.html").resolve()))

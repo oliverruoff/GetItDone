@@ -5,17 +5,23 @@ from pathlib import Path
 APP_ID = "de.getitdone.notebook"
 
 
-def register():
+def set_process_identity():
+    """Set taskbar identity before Qt creates any windows; no WinRT imports."""
     import ctypes
+
+    result = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    if result:
+        raise OSError("Windows could not set the GetItDone application identity.")
+
+
+def register():
     import winreg
 
     icon = Path(__file__).resolve().parents[1] / "ui/assets/getitdone.ico"
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\Classes\AppUserModelId\{APP_ID}") as key:
         winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "GetItDone")
         winreg.SetValueEx(key, "IconUri", 0, winreg.REG_SZ, str(icon))
-    result = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
-    if result:
-        raise OSError("Windows could not set the GetItDone application identity.")
+    set_process_identity()
 
 
 class WindowsNotifications:

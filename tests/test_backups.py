@@ -319,6 +319,7 @@ def test_window_runs_real_background_backup_of_current_notes(qtbot, tmp_path, mo
     monkeypatch.setattr(window.notifier, "send", notifications.append)
     window.timer.stop()
     window.show()
+    qtbot.waitUntil(lambda: window.knowledge.files.count() > 0)
     window.knowledge.files.setCurrentRow(0)
     qtbot.waitUntil(lambda: window.knowledge.document is not None)
     window.knowledge.editor.setPlainText("Latest unsaved text ä")

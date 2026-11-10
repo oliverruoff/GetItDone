@@ -40,6 +40,14 @@ For agent-driven installation with a persistent, cross-shell `gid` command, use 
 
 Use `--data-dir /tmp/getitdone-test` for an isolated test notebook.
 
+Startup builds only the Tasks UI and its independent reminder/scheduling/backup
+services. Optional workspace tabs use lightweight placeholders and import their
+widgets on first use, through a window-owned Qt timer. Browser/terminal and PDF
+modules therefore stay unloaded in tasks-only sessions. Initial Knowledge-folder
+listing and visible Canvas asset scans use the existing `Job` worker pool; Qt
+widget construction stays on the GUI thread. Saving and quitting do not load
+unopened tabs.
+
 ## Tasks
 
 - **+ Add item** creates a top-level item. Enter adds a sibling; Tab / Shift+Tab indents/outdents outside multiline notes. Double-click or F2 edits text in place. The expand icon shows the full wrapped title; expanded titles use a multiline editor. HTTP(S) URLs and Markdown links in titles open in the default browser. Task notes span the full row. Their trash icon deletes without confirmation and offers a separate Undo notice. Drag items to reorder or drop onto a parent to nest them; descendants move with their parent. Single clicks keep keyboard focus without a selection outline. The full-width Add item button stays below the list. Row icons provide **Edit note**, **New session** and **More actions**; their tooltips and accessible names explain each action.

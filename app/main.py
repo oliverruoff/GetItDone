@@ -116,13 +116,23 @@ def main():
         help="Also test the integrated terminal using a local test process",
     )
     args = parser.parse_args()
+    if sys.platform == "win32":
+        from app.notifications.windows import set_process_identity
+
+        try:
+            set_process_identity()
+        except OSError:
+            import logging
+
+            logging.exception("Could not configure Windows taskbar identity")
     QLocale.setDefault(QLocale(QLocale.English, QLocale.UnitedKingdom))
     QApplication.setOrganizationName("GetItDone")
     QApplication.setApplicationName("GetItDone")
     app = QApplication(sys.argv[:1])
     from PySide6.QtGui import QIcon
 
-    app.setWindowIcon(QIcon(str(Path(__file__).parent / "ui/assets/getitdone.svg")))
+    icon_name = "getitdone.ico" if sys.platform == "win32" else "getitdone.svg"
+    app.setWindowIcon(QIcon(str(Path(__file__).parent / "ui/assets" / icon_name)))
     app.setQuitOnLastWindowClosed(False)
     folder = args.data_dir or Path(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation))
     try:

@@ -27,6 +27,11 @@ To restore, quit GetItDone and restore `canvas/` into the data directory.
 
 Open **GetItDone**. On macOS, you can drag the app into Applications and launch it from there. On Windows, launch it from the Start menu after installation. If you have already set up the project locally, double-click **run.command** on your Mac to launch the current version.
 
+Tasks appear first and can be edited immediately. Other tabs initialize when
+opened; the embedded browser and PDF viewer are not loaded for a tasks-only
+session. Reminders, scheduled jobs and backups remain active independently of
+their tabs. Knowledge-folder discovery runs in the background.
+
 Installers from successful builds are available as [GitHub Actions artifacts](https://github.com/oliverruoff/GetItDone/actions/workflows/build.yml). Open a successful run for your operating system and download the matching artifact; you may need to sign in to GitHub. For setup from source, see the [technical guide](docs/DEVELOPMENT.md).
 
 ### Installation by a coding agent (including `gid`)

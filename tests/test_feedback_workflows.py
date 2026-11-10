@@ -160,7 +160,7 @@ def test_schedule_editor_inbox_and_session_links(window, qtbot):
     dialog.unit.setCurrentText("weeks")
     dialog.save()
     assert dialog.values["every"] == 3 and dialog.values["unit"] == "weeks"
-    assert window.workspace.tabText(3) == "Scheduled tasks"
+    assert window.workspace.tabText(window.optional_pages["scheduled"]["index"]) == "Scheduled tasks"
     assert any(a.text() == "Keyboard shortcuts" for menu in window.menuBar().actions()
                if menu.menu() for a in menu.menu().actions())
 

@@ -85,7 +85,7 @@ class NewNote(QDialog):
 class Knowledge(QWidget):
     settings_changed = Signal()
 
-    def __init__(self, settings, parent=None):
+    def __init__(self, settings, parent=None, *, background_initial=False):
         super().__init__(parent)
         self.settings = settings
         self.folder = settings.get("knowledge_folder", "")
@@ -94,6 +94,7 @@ class Knowledge(QWidget):
         self.dirty = False
         self.loading = False
         self.generation = 0
+        self.listing_generation = 0
         self.auto_error = False
         layout = QVBoxLayout(self)
         toolbar = QHBoxLayout()
@@ -183,7 +184,7 @@ class Knowledge(QWidget):
         self.autosave.setSingleShot(True)
         self.autosave.setInterval(700)
         self.autosave.timeout.connect(self.save_auto)
-        self.refresh(initial=True)
+        self.refresh(initial=True, background=background_initial)
 
     def choose_folder(self):
         if not self.guard():
@@ -252,7 +253,7 @@ class Knowledge(QWidget):
         self.clear_document()
         self.refresh()
 
-    def refresh(self, checked=False, initial=False, preserve_document=False):
+    def refresh(self, checked=False, initial=False, preserve_document=False, background=False):
         if not initial and not self.guard():
             return
         selected = (
@@ -265,15 +266,34 @@ class Knowledge(QWidget):
             button.setVisible(bool(self.folder))
         self.splitter.setVisible(bool(self.folder))
         self.path_label.setText(f"Folder: {self.folder}" if self.folder else "No knowledge folder selected")
-        try:
-            paths = list_documents(self.folder, self.sort.currentData()) if self.folder else []
-        except DocumentError as exc:
-            self.files.blockSignals(True)
-            self.files.clear()
-            self.files.blockSignals(False)
-            self.clear_document()
-            self.status.setText(str(exc))
+        self.listing_generation += 1
+        generation = self.listing_generation
+        folder, sort = self.folder, self.sort.currentData()
+
+        def loaded(paths, exc):
+            if generation != self.listing_generation:
+                return
+            if exc:
+                self.files.blockSignals(True)
+                self.files.clear()
+                self.files.blockSignals(False)
+                self.clear_document()
+                self.status.setText(str(exc))
+                return
+            self.apply_file_list(paths, selected, preserve_document)
+
+        if background and folder:
+            self.status.setText("Reading knowledge folder …")
+            Job(lambda: list_documents(folder, sort), loaded, self)
             return
+        try:
+            paths = list_documents(folder, sort) if folder else []
+        except DocumentError as exc:
+            loaded(None, exc)
+            return
+        loaded(paths, None)
+
+    def apply_file_list(self, paths, selected, preserve_document):
         self.files.blockSignals(True)
         self.files.clear()
         chosen = None
