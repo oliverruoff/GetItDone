@@ -159,15 +159,19 @@ def test_keyboard_enter_finishes_editing_and_tab_indents(qtbot, tmp_path):
     window.quitting = True
 
 
-def test_completion_confirmation_does_not_stop_agent(qtbot, tmp_path, monkeypatch):
+@pytest.mark.parametrize("nested", [False, True])
+def test_completion_without_confirmation_does_not_stop_agent(qtbot, tmp_path, monkeypatch, nested):
     from app.models import now_iso, uid
 
     store = Store(tmp_path)
     book = Notebook(store.load())
     item = book.add("Task")
+    linked_item = book.add("Child", item["id"]) if nested else item
+    if nested:
+        linked_item = book.add("Grandchild", linked_item["id"])
     session = dict(
         id=uid(),
-        item_id=item["id"],
+        item_id=linked_item["id"],
         agent="test",
         title="Agent",
         workdir=str(tmp_path),
@@ -180,12 +184,15 @@ def test_completion_confirmation_does_not_stop_agent(qtbot, tmp_path, monkeypatc
     window.show()
     window.launch(session, [sys.executable, "-u", "-c", "import time; time.sleep(20)"])
     terminal = window.terminals[session["id"]]
-    monkeypatch.setattr("app.ui.window.confirm", lambda *args: False)
-    window.complete(item["id"], True)
-    assert not item["done"] and terminal.running
-    monkeypatch.setattr("app.ui.window.confirm", lambda *args: True)
+
+    def unexpected_confirmation(*args):
+        raise AssertionError("Completing a task must not request confirmation")
+
+    monkeypatch.setattr("app.ui.window.confirm", unexpected_confirmation)
     window.complete(item["id"], True)
     assert item["done"] and terminal.running
+    assert linked_item["done"]
+    assert session in window.notebook.data["sessions"]
     assert item["id"] in window.tasks.rows
     window.tasks.cleanup_completed()
     assert item["id"] not in window.tasks.rows
@@ -194,6 +201,7 @@ def test_completion_confirmation_does_not_stop_agent(qtbot, tmp_path, monkeypatc
     assert terminal.running and window.tabs.count() == 1
     terminal.stop()
     qtbot.waitUntil(lambda: not terminal.running, timeout=8000)
+    qtbot.waitUntil(lambda: not terminal.reader.is_alive(), timeout=8000)
     window.timer.stop()
     window.saver.stop()
     window.tray.hide()

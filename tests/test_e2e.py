@@ -88,6 +88,73 @@ def create_and_categorize(qtbot, window, category):
     return item
 
 
+@pytest.mark.parametrize("text, notes", [("", ""), (" \t ", "\n  ")])
+def test_checking_empty_task_deletes_it_immediately(qtbot, workflow, text, notes):
+    window, _ = workflow
+    book = window.notebook
+    parent = book.add("Parent")
+    item = book.add(text, parent["id"])
+    book.update(item["id"], notes=notes)
+    sibling = book.add("Keep me", parent["id"])
+    window.draft_items.add(item["id"])
+    window.tasks.rebuild(select=item["id"])
+    window.tasks.rows[parent["id"]].setExpanded(True)
+    row = window.tasks.rows[item["id"]]
+    row.setCheckState(0, Qt.Checked)
+    qtbot.waitUntil(lambda: book.get(item["id"]) is None)
+
+    assert item["id"] not in window.tasks.rows
+    assert item["id"] not in window.draft_items
+    assert item["id"] not in window.completion_undos
+    assert book.children(parent["id"]) == [sibling]
+    assert sibling["position"] == 0
+    assert not parent["done"]
+    window.tasks.status.setCurrentIndex(1)
+    assert item["id"] not in window.tasks.rows
+    assert window.flush()
+    assert all(i["id"] != item["id"] for i in Store(window.store.folder).load()["items"])
+
+
+@pytest.mark.parametrize("content", ["text", "notes", "reminder", "category", "child", "session", "job"])
+def test_checking_task_with_information_preserves_it(qtbot, workflow, content, monkeypatch):
+    from app.models import now_iso
+
+    window, category = workflow
+    book = window.notebook
+    item = book.add("")
+    if content == "text":
+        book.update(item["id"], text="Task")
+    elif content == "notes":
+        book.update(item["id"], notes="Important note")
+    elif content == "reminder":
+        book.update(item["id"], reminder={"at": "2099-01-01T10:00:00+00:00"})
+    elif content == "category":
+        book.update(item["id"], category_id=category["id"])
+    elif content == "child":
+        book.add("Important child", item["id"])
+    elif content == "session":
+        book.data["sessions"].append(dict(
+            id=uid(), item_id=item["id"], agent="test", title="Saved agent",
+            workdir=str(window.store.folder), native_session_id=None, created_at=now_iso()))
+    else:
+        window.scheduler.jobs.append(dict(
+            id=uid(), item_id=item["id"], title="Scheduled agent", prompt="Keep this job",
+            agent="test", workdir=str(window.store.folder), enabled=False,
+            next_at=None, every=0, unit="days", runs=[]))
+    window.tasks.rebuild()
+
+    def unexpected_confirmation(*args):
+        raise AssertionError("Completing a task must not request confirmation")
+
+    monkeypatch.setattr("app.ui.window.confirm", unexpected_confirmation)
+    window.complete(item["id"], True)
+    assert book.get(item["id"]) is item
+    assert item["done"]
+    window.undo_completion(item["id"])
+    assert not item["done"]
+    assert window.flush()
+
+
 def test_create_categorize_render_save_and_complete(qtbot, workflow):
     window, category = workflow
     item = create_and_categorize(qtbot, window, category)

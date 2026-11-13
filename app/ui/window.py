@@ -557,20 +557,25 @@ class Window(QMainWindow):
             self.schedule_save()
 
     def complete(self, ident, done):
-        if self.notebook.get(ident) is None:
+        item = self.notebook.get(ident)
+        if item is None:
             self.tasks.dismiss_undo(ident)
             return
         try:
-            affected = {ident, *(i["id"] for i in self.notebook.descendants(ident))}
-            linked = [s for s in self.notebook.data["sessions"] if s["item_id"] in affected]
-            if done and any(self.terminals.get(s["id"]) and self.terminals[s["id"]].running for s in linked):
-                if not confirm(
-                    self,
-                    "Running sessions",
-                    "Its sessions will keep running after completion and Cleanup. Complete it?",
-                ):
-                    self.tasks.rebuild(select=ident)
-                    return
+            if (done and not item["text"].strip() and not item["notes"].strip()
+                    and not item["reminder"] and not item["category_id"]
+                    and not self.notebook.children(ident)
+                    and not any(s["item_id"] == ident for s in self.notebook.data["sessions"])
+                    and not any(j.get("item_id") == ident for j in self.notebook.data.get("scheduled_jobs", []))):
+                self.notebook.delete(ident)
+                self.draft_items.discard(ident)
+                self.tasks.dismiss_undo(ident)
+                self.tasks.dismiss_undo("note:" + ident)
+                self.completion_undos.pop(ident, None)
+                self.note_undos.pop(ident, None)
+                self.tasks.rebuild()
+                self.schedule_save()
+                return
             before = self.notebook.complete(ident, done)
             if done:
                 self.completion_undos[ident] = before
