@@ -133,7 +133,7 @@ class Window(QMainWindow):
         self.optional_pages = {}
         for name, title in [("knowledge", "Knowledge"), ("canvas", "Canvas"),
                             ("inspector", "Agent context"), ("scheduled", "Scheduled tasks"),
-                            ("executions", "Agent executions")]:
+                            ("executions", "Agent executions"), ("agents", "Agents")]:
             placeholder = QWidget()
             placeholder_layout = QVBoxLayout(placeholder)
             placeholder_layout.addWidget(QLabel("Loading " + title + " …"))
@@ -265,6 +265,12 @@ class Window(QMainWindow):
             self.workspace.setCurrentIndex(1)
             self.workspace.blockSignals(False)
             return
+        agents_page = self.optional_pages["agents"]
+        if agents_page["widget"] is not None:
+            if self.last_workspace == agents_page["index"] and index != agents_page["index"]:
+                agents_page["widget"].deactivate()
+            elif index == agents_page["index"]:
+                agents_page["widget"].activate()
         self.last_workspace = index
         # Let Qt paint the selected tab and dispatch input before optional work.
         self.page_loader.start()
@@ -321,6 +327,10 @@ class Window(QMainWindow):
             widget.session_details.connect(self.session_details)
             widget.scheduled_open.connect(self.open_scheduled_execution)
             widget.refresh(execution_records(self.notebook, self.terminals))
+        elif name == "agents":
+            from app.ui.agents import Agents
+
+            widget = Agents(self)
         else:
             raise ValueError("Unknown workspace page: " + name)
         page["widget"] = widget
@@ -336,6 +346,8 @@ class Window(QMainWindow):
         finally:
             self.workspace.blockSignals(False)
         placeholder.deleteLater()
+        if name == "agents" and self.workspace.currentIndex() == index:
+            widget.activate()
         return widget
 
     @property
@@ -365,6 +377,12 @@ class Window(QMainWindow):
 
     def schedule_save(self):
         self.flush()
+        self.refresh_agents()
+
+    def refresh_agents(self):
+        page = self.optional_pages["agents"]["widget"]
+        if page is not None:
+            page.refresh()
 
     def update_notification_status(self, text):
         self.notification_status.setToolTip(text)
@@ -453,6 +471,7 @@ class Window(QMainWindow):
         self.backup_status.setToolTip(config["last_error"] or config["last_file"] or "Configure in File → Settings → Backups")
 
     def refresh_scheduled_sessions(self):
+        self.refresh_agents()
         focus = QApplication.focusWidget()
         if (self.tasks.tree.state() == QAbstractItemView.EditingState
                 or isinstance(focus, QPlainTextEdit) and self.tasks.isAncestorOf(focus)):
@@ -805,7 +824,13 @@ class Window(QMainWindow):
             return
         terminal.agent_message = False
         self.session_changed(ident)
-        self.workspace.setCurrentIndex(0)
+        agents_page = self.optional_pages["agents"]["widget"]
+        if agents_page is not None and agents_page.active():
+            agents_page.selected_session = ident
+            agents_page.tree.setCurrentItem(agents_page.session_rows.get(ident))
+            agents_page.show_selected()
+        else:
+            self.workspace.setCurrentIndex(0)
         self.terminal_panel.show()
         self.tabs.setCurrentWidget(terminal)
         self.visibility()
@@ -899,6 +924,7 @@ class Window(QMainWindow):
         if session:
             self.tasks.update_session(session)
         self.refresh_executions()
+        self.refresh_agents()
         if not terminal:
             return
         index = self.tabs.indexOf(terminal)
@@ -941,6 +967,7 @@ class Window(QMainWindow):
                 self.tasks.update_session(session)
         terminal.close()
         terminal.deleteLater()
+        self.refresh_agents()
         self.visibility()
         self.refresh_executions()
 
@@ -954,20 +981,24 @@ class Window(QMainWindow):
             inspector.follow_session(self.session(self.selected_session))
 
     def visibility(self, *args):
+        agents_page = self.optional_pages["agents"]["widget"]
+        agents_active = agents_page is not None and agents_page.active()
         has_terminals = self.tabs.count() > 0
         self.tabs.setVisible(has_terminals)
         self.terminal_empty.setVisible(not has_terminals)
         for index in range(self.terminal_header.count()):
             widget = self.terminal_header.itemAt(index).widget()
             if widget:
-                widget.setVisible(has_terminals)
+                widget.setVisible(has_terminals and not (
+                    agents_active and widget in (self.maximize_terminal_button, self.popout_terminal_button)
+                ))
         if not has_terminals and not self.terminal_popout:
             self.vertical.setSizes([max(1, self.vertical.height() - 48), 48])
         visible = (
             not self.terminal_popout
             and self.isVisible()
             and not self.isMinimized()
-            and self.workspace.currentIndex() == 0
+            and (self.workspace.currentIndex() == 0 or agents_active)
             and self.terminal_panel.isVisible()
         )
         for terminal in list(self.terminals.values()):

@@ -80,6 +80,9 @@ STYLESHEET = """
     QPushButton:focus { border: 2px solid $accent; }
     QPushButton:disabled, QToolButton:disabled { color: $muted; background: $panel; }
     QTreeWidget#taskTree::item { min-height: 24px; }
+    QTreeWidget#agentTabs::item { min-height: 32px; padding: 3px 5px; }
+    QTreeWidget#agentTabs::item:selected { background: $selection; color: $selected_text; }
+    QTreeWidget#agentTabs::item:hover { background: $hover; }
     QTreeWidget#taskTree QPushButton { padding: 2px 8px; }
     QPushButton#addTask { text-align: left; padding-left: 18px; background: $panel;
         color: $accent_text; border: 1px solid $accent; font-weight: 600; }
