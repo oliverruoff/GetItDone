@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 
 from app.agents import agents
 from app.agents.replies import snapshots
-from app.agents.sessions import codex_sessions, native_sessions
+from app.agents.sessions import codex_sessions, native_sessions, validate_native_id
 from app.backups import BackupScheduler, backup_defaults
 from app.executions import execution_records, recover_process_runs
 from app.models import Notebook, now_iso, uid
@@ -734,8 +734,8 @@ class Window(QMainWindow):
                 title=item["text"][:70],
                 created_at=now_iso(),
             )
-            if self.launch(session, dialog.command):
-                self.terminals[session["id"]].agent_baselined = True
+            if self.launch(session, dialog.command, resumed=dialog.linking_existing):
+                self.terminals[session["id"]].agent_baselined = not dialog.linking_existing
                 self.notebook.data["sessions"].append(session)
                 self.refresh_executions()
                 QApplication.clipboard().setText(item["text"])
@@ -743,7 +743,7 @@ class Window(QMainWindow):
                 self.select_session(session["id"])
                 self.schedule_save()
 
-    def launch(self, session, command):
+    def launch(self, session, command, *, resumed=False):
         from app.terminal.bridge import Terminal
 
         baseline = (
@@ -771,7 +771,8 @@ class Window(QMainWindow):
         terminal.agent_baselined = False
         terminal.last_agent_message = None
         execution = dict(id=uid(), started_at=now_iso(), finished_at=None, status="running",
-                         resumed=bool(session.get("process_runs")) or session in self.notebook.data["sessions"])
+                         resumed=resumed or bool(session.get("process_runs"))
+                         or session in self.notebook.data["sessions"])
         session.setdefault("process_runs", []).append(execution)
         terminal.execution_id = execution["id"]
         terminal.ended.connect(lambda code: self.finish_execution(session, terminal, execution, code))
@@ -885,25 +886,7 @@ class Window(QMainWindow):
 
     @staticmethod
     def validate_native_id(agent, value):
-        import re
-        from uuid import UUID
-
-        if any(ord(c) < 32 for c in value) or value.startswith("-"):
-            raise ValueError("Invalid native session ID.")
-        if agent in ("codex", "claude", "pi"):
-            if (
-                agent == "pi"
-                and Path(value).is_absolute()
-                and Path(value).is_file()
-                and value.endswith(".jsonl")
-            ):
-                return
-            try:
-                UUID(value)
-            except ValueError as exc:
-                raise ValueError("Enter the full UUID of the native session.") from exc
-        if agent == "opencode" and not re.fullmatch(r"ses_[A-Za-z0-9]+", value):
-            raise ValueError("OpenCode requires the full session ID (ses_…).")
+        validate_native_id(agent, value)
 
     def session_changed(self, ident):
         session = self.session(ident)
@@ -1290,7 +1273,10 @@ class Window(QMainWindow):
             self.tasks.tree.scrollToItem(self.tasks.rows[ident])
 
     def restore(self):
-        self.showNormal()
+        # Reveal the window without leaving fullscreen or maximized mode.
+        if self.isMinimized():
+            self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
+        self.show()
         self.raise_()
         self.activateWindow()
         self.visibility()

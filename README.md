@@ -289,8 +289,9 @@ You can use **OpenCode, Codex, Claude Code, or pi** in integrated terminals. Ins
 
 1. Click the **New session** terminal icon on a task.
 2. Choose the agent and the working folder where it should operate.
-3. Confirm with **New session**.
-4. The task text is copied to your clipboard. Paste it into the terminal and submit it yourself.
+3. Optionally enter an **Existing session ID** to link and reopen an existing conversation instead of creating a new one. The hint below the field explains how to find the ID for the selected agent. Use the original working directory and local agent account; custom profiles do not support linking.
+4. Confirm with **New session** or **Link existing session**.
+5. The task text is copied to your clipboard. Paste it into the terminal and submit it yourself.
 
 The linked session appears below the task. **Resume** opens its running terminal or resumes the saved session when its session ID is available. The note icon (**Last reply**) opens the latest captured assistant text directly from the notebook, without starting the agent. Replies and their unread state survive app restarts; a later reply replaces the previous one. Click **New agent message** in the status column to read it. New replies observed while the app is inactive can send a system notification. Initial history imports are quiet. Codex, Claude and pi replies are read from exact local session histories; OpenCode uses its local API. Custom profiles have no automatic reply capture. Missing histories or unavailable APIs preserve the previously saved reply.
 

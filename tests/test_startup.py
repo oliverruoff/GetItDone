@@ -121,6 +121,50 @@ def test_todos_edit_and_persist_before_optional_tabs_load(window, qtbot):
     assert not (window.store.folder / "canvas").exists()
 
 
+@pytest.mark.parametrize("state", [Qt.WindowNoState, Qt.WindowMaximized, Qt.WindowFullScreen])
+@pytest.mark.parametrize("shortcut", ["Ctrl+T", "Ctrl+N"])
+def test_quick_shortcuts_preserve_window_state_and_geometry(window, qtbot, monkeypatch, state, shortcut):
+    notes = []
+    if shortcut == "Ctrl+N":
+        monkeypatch.setattr(window.knowledge, "new_note", lambda: notes.append(True))
+    window.setWindowState(state)
+    qtbot.wait(100)
+    geometry = window.geometry()
+    previous_state = window.windowState()
+    count = len(window.notebook.items)
+
+    action = next(action for action in window.actions() if action.shortcut().toString() == shortcut)
+    action.trigger()
+    qtbot.wait(100)
+
+    assert window.windowState() == previous_state
+    assert window.geometry() == geometry
+    if shortcut == "Ctrl+T":
+        assert len(window.notebook.items) == count + 1
+    else:
+        assert notes == [True]
+        assert window.workspace.currentWidget() is window.knowledge
+
+
+@pytest.mark.parametrize("state", [Qt.WindowNoState, Qt.WindowMaximized, Qt.WindowFullScreen])
+@pytest.mark.parametrize("hidden", [False, True])
+def test_restore_reveals_window_and_preserves_mode(window, qtbot, state, hidden):
+    window.setWindowState(state)
+    qtbot.wait(100)
+    if hidden:
+        window.hide()
+    else:
+        window.showMinimized()
+    qtbot.wait(100)
+
+    window.restore()
+    qtbot.wait(100)
+
+    assert window.isVisible()
+    assert not window.isMinimized()
+    assert window.windowState() & (Qt.WindowMaximized | Qt.WindowFullScreen) == state
+
+
 @pytest.mark.parametrize("name", ["knowledge", "canvas", "inspector", "scheduled", "executions"])
 def test_selected_tab_loads_once_without_loading_other_tabs(window, qtbot, name):
     page = window.optional_pages[name]

@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.agents import agents
+from app.agents.sessions import validate_native_id
 from app.models import uid
 from app.session_paths import prepare_session_folder, session_folder
 from app.ui.backup_settings import BackupSettings
@@ -35,12 +36,13 @@ from app.ui.common import DismissibleDialog, Job, confirm, error
 class SessionDialog(QDialog):
     def __init__(self, settings, parent=None, *, fixed_directory=None):
         super().__init__(parent)
-        self.setWindowTitle("New agent session")
-        self.resize(570, 260)
+        self.setWindowTitle("Open agent session")
+        self.resize(620, 380)
         self.registry = agents(settings)
         self.session_settings = settings
         self.supports_status = False
         self.native_session_id = None
+        self.linking_existing = False
         layout = QFormLayout(self)
         self.agent = QComboBox()
         for ident, agent in self.registry.items():
@@ -58,6 +60,22 @@ class SessionDialog(QDialog):
         line.addWidget(self.workdir, 1)
         line.addWidget(choose)
         layout.addRow("Working directory", line)
+        self.existing_session = QLineEdit()
+        self.existing_session.setAccessibleName("Existing session ID (optional)")
+        self.existing_session.setPlaceholderText("Leave empty to create a new session")
+        self.existing_session.setClearButtonEnabled(True)
+        layout.addRow("Existing session ID (optional)", self.existing_session)
+        self.session_hint = QLabel()
+        self.session_hint.setWordWrap(True)
+        self.session_hint.setTextFormat(Qt.PlainText)
+        self.session_hint.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addRow(self.session_hint)
+        link_hint = QLabel(
+            "An ID reopens that conversation instead of creating a new one. "
+            "Use its original working directory and the same local agent account."
+        )
+        link_hint.setWordWrap(True)
+        layout.addRow(link_hint)
         self.info = QLabel("")
         self.info.setWordWrap(True)
         self.info.setTextFormat(Qt.PlainText)
@@ -76,8 +94,18 @@ class SessionDialog(QDialog):
         buttons.accepted.connect(self.check)
         buttons.rejected.connect(self.reject)
         layout.addRow(buttons)
+        self.agent.currentIndexChanged.connect(self.update_session_link)
+        self.existing_session.textChanged.connect(self.update_session_link)
         self.agent.currentIndexChanged.connect(self.probe)
+        self.update_session_link()
         self.probe()
+
+    def update_session_link(self):
+        agent = self.registry[self.agent.currentData()]
+        self.existing_session.setEnabled(bool(agent.resume_args))
+        self.session_hint.setText(agent.session_id_hint)
+        linking = bool(agent.resume_args and self.existing_session.text().strip())
+        self.start_button.setText("Link existing session" if linking else "New session")
 
     def choose(self):
         path = QFileDialog.getExistingDirectory(self, "Working directory", self.workdir.text())
@@ -105,9 +133,15 @@ class SessionDialog(QDialog):
 
     def check(self):
         try:
-            self.native_session_id = "ses_" + uid().replace("-", "") if self.supports_status else None
             agent = self.registry[self.agent.currentData()]
-            if agent.id in ("claude", "pi"):
+            existing = self.existing_session.text().strip() if self.existing_session.isEnabled() else ""
+            self.linking_existing = bool(existing)
+            self.native_session_id = "ses_" + uid().replace("-", "") if self.supports_status else None
+            if existing:
+                validate_native_id(agent.id, existing)
+                self.native_session_id = existing
+                self.command = agent.command(existing)
+            elif agent.id in ("claude", "pi"):
                 self.native_session_id = uid()
                 self.command = agent.command() + ["--session-id", self.native_session_id]
             else:

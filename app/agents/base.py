@@ -80,6 +80,24 @@ class Agent:
         return runtime_context(self.id, Path(workdir))
 
     @property
+    def session_id_hint(self):
+        if not self.resume_args:
+            return "This custom profile does not support linking or resuming an existing session."
+        if self.id == "opencode":
+            return "OpenCode: in the existing session, press Ctrl+P and choose Copy session ID (ses_…)."
+        if self.id == "codex":
+            return "Codex: run /status in the existing session and copy the full UUID shown next to Session."
+        if self.id == "claude":
+            root = Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude"))).resolve() / "projects"
+            return (
+                f"Claude Code: find the conversation's .jsonl transcript under {root}. "
+                "Its filename without .jsonl is the full session UUID."
+            )
+        if self.id == "pi":
+            return "pi: run /session and copy the full ID, or the absolute path of the session's .jsonl file."
+        return "Copy the exact native session ID from this agent's session information."
+
+    @property
     def capabilities(self):
         return (
             (

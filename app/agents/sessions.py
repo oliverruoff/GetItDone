@@ -2,9 +2,25 @@
 
 import json
 import os
+import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from uuid import UUID
+
+
+def validate_native_id(agent, value):
+    if any(ord(c) < 32 for c in value) or value.startswith("-"):
+        raise ValueError("Invalid native session ID.")
+    if agent in ("codex", "claude", "pi"):
+        if agent == "pi" and Path(value).is_absolute() and Path(value).is_file() and value.endswith(".jsonl"):
+            return
+        try:
+            UUID(value)
+        except ValueError as exc:
+            raise ValueError("Enter the full UUID of the native session.") from exc
+    if agent == "opencode" and not re.fullmatch(r"ses_[A-Za-z0-9]+", value):
+        raise ValueError("OpenCode requires the full session ID (ses_…).")
 
 
 def codex_sessions(workdir, started_at=None):
