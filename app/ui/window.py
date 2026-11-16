@@ -741,9 +741,9 @@ class Window(QMainWindow):
     def session(self, ident):
         return next((s for s in self.notebook.data["sessions"] if s["id"] == ident), None)
 
-    def start_session(self):
-        ident = self.tasks.current_id()
-        if not ident:
+    def start_session(self, *, standalone=False):
+        ident = None if standalone else self.tasks.current_id()
+        if not standalone and not ident:
             error(self, "Select or create an item first.")
             return
         dialog = SessionDialog(self.notebook.data["settings"], self)
@@ -755,15 +755,20 @@ class Window(QMainWindow):
                 agent=dialog.agent.currentData(),
                 native_session_id=dialog.native_session_id,
                 workdir=dialog.directory,
-                title=item["text"][:70],
+                title=dialog.title.text().strip() or (item["text"][:70] if item else "Ad-hoc session"),
+                title_custom=bool(dialog.title.text().strip()),
                 created_at=now_iso(),
             )
             if self.launch(session, dialog.command, resumed=dialog.linking_existing):
                 self.terminals[session["id"]].agent_baselined = not dialog.linking_existing
                 self.notebook.data["sessions"].append(session)
                 self.refresh_executions()
-                QApplication.clipboard().setText(item["text"])
-                self.tasks.rebuild(select=ident)
+                if item:
+                    QApplication.clipboard().setText(item["text"])
+                    self.tasks.rebuild(select=ident)
+                agents_page = self.optional_pages["agents"]["widget"]
+                if standalone and agents_page is not None:
+                    agents_page.selected_session = session["id"]
                 self.select_session(session["id"])
                 self.schedule_save()
 
@@ -822,6 +827,10 @@ class Window(QMainWindow):
                 "No terminal is connected. Use Resume to open the saved native session.",
             )
             return
+        session = self.session(ident)
+        if session and session.get("agents_hidden"):
+            session["agents_hidden"] = False
+            self.schedule_save()
         terminal.agent_message = False
         self.session_changed(ident)
         agents_page = self.optional_pages["agents"]["widget"]
@@ -910,7 +919,10 @@ class Window(QMainWindow):
                 except ValueError as exc:
                     error(self, exc)
                     return
-            session.update(title=title.text().strip() or session["title"], native_session_id=value or None)
+            label = title.text().strip() or session["title"]
+            if label != session["title"]:
+                session["title_custom"] = True
+            session.update(title=label, native_session_id=value or None)
             self.session_changed(ident)
             self.schedule_save()
 
@@ -1329,6 +1341,8 @@ class Window(QMainWindow):
         super().changeEvent(event)
         if event.type() == QEvent.WindowStateChange:
             self.visibility()
+        elif event.type() == QEvent.ActivationChange and self.isActiveWindow() and hasattr(self, "optional_pages"):
+            QTimer.singleShot(0, self.refresh_agents)
 
     def closeEvent(self, event):
         if self.quitting:

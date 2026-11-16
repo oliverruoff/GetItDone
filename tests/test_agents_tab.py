@@ -1,10 +1,15 @@
 import sys
+from string import Template
 
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QToolButton
 
+from app.executions import execution_records
 from app.models import now_iso, uid
 from app.storage import Store
+from app.ui.dialogs import SessionDialog
+from app.ui.theme import LIGHT, STYLESHEET
 from app.ui.window import Window
 
 
@@ -158,7 +163,8 @@ def test_ended_session_stays_visible_and_close_retains_saved_reply(window, qtbot
     qtbot.waitUntil(lambda: not terminal.running, timeout=10000)
     window.session_changed(session["id"])
     assert session["id"] in panel.session_rows
-    assert "Ended" in panel.session_rows[session["id"]].text(0)
+    assert panel.session_rows[session["id"]].text(0) == f"{session['title']} · {session['agent']}"
+    assert "Ended" in panel.session_rows[session["id"]].toolTip(0)
     assert panel.resume.isVisible()
     assert window.tabs.currentWidget() is terminal
     qtbot.waitUntil(lambda: not terminal.reader.is_alive(), timeout=10000)
@@ -200,3 +206,238 @@ def test_agents_docks_popout_without_restarting_terminal(window, qtbot):
     assert window.terminal_popout is None
     assert panel.content.isAncestorOf(terminal)
     assert terminal.running and terminal.seen
+
+
+def test_ad_hoc_session_starts_without_todo_and_preserves_clipboard(window, qtbot, monkeypatch):
+    window.notebook.data["settings"].update(default_agent="codex", default_workdir=str(window.store.folder))
+    monkeypatch.setattr(SessionDialog, "probe", lambda self: None)
+    monkeypatch.setattr("app.agents.base.executable_path", lambda name: sys.executable)
+
+    def accept(dialog):
+        dialog.check()
+        return dialog.result()
+
+    monkeypatch.setattr(SessionDialog, "exec", accept)
+    real_launch = window.launch
+    monkeypatch.setattr(window, "launch", lambda session, command, **kwargs: real_launch(
+        session, [sys.executable, "-u", "-c", "import time; time.sleep(5)"], **kwargs))
+    QApplication.clipboard().setText("Keep my clipboard")
+    panel = open_agents(window, qtbot)
+    qtbot.mouseClick(panel.new_session, Qt.LeftButton)
+    session = window.notebook.data["sessions"][0]
+    assert session["item_id"] is None
+    assert not window.notebook.items
+    assert panel.selected_session == session["id"]
+    assert window.workspace.currentWidget() is panel
+    assert window.terminals[session["id"]].seen
+    assert QApplication.clipboard().text() == "Keep my clipboard"
+    assert window.save_all()
+    assert window.store.load()["sessions"][0]["item_id"] is None
+    assert execution_records(window.notebook, window.terminals)[0]["origin"] == "Ad-hoc"
+
+
+def test_ad_hoc_pin_persists_and_trash_only_hides_running_session(window, qtbot):
+    _, session = attach(window, "Pinned ad-hoc session")
+    session["item_id"] = None
+    session["last_reply"] = {"text": "Keep this reply", "saved_at": now_iso()}
+    assert window.launch(session, [sys.executable, "-u", "-c", "import time; time.sleep(5)"])
+    terminal = window.terminals[session["id"]]
+    panel = open_agents(window, qtbot)
+    assert session["id"] in panel.session_rows
+    assert "Pinned ad-hoc session" in panel.session_rows[session["id"]].text(0)
+    assert window.save_all()
+    assert not window.store.load()["sessions"][0].get("agents_hidden")
+    button = panel.tree.itemWidget(panel.session_rows[session["id"]], 1)
+    qtbot.mouseClick(button, Qt.LeftButton)
+    qtbot.waitUntil(lambda: session["id"] not in panel.session_rows)
+    assert terminal.running
+    assert window.session(session["id"]) is session
+    assert session["last_reply"]["text"] == "Keep this reply"
+    assert window.save_all()
+    assert window.store.load()["sessions"][0]["agents_hidden"] is True
+    assert execution_records(window.notebook, window.terminals)[0]["session_id"] == session["id"]
+    window.open_session(session["id"])
+    assert session["id"] in panel.session_rows
+    assert panel.selected_session == session["id"]
+    assert terminal.running and terminal.seen
+
+
+def test_ended_ad_hoc_session_stays_pinned_after_terminal_close(window, qtbot):
+    _, session = attach(window, "Quick question")
+    session["item_id"] = None
+    assert window.launch(session, [sys.executable, "-u", "-c", "print('AD_HOC_DONE')"])
+    terminal = window.terminals[session["id"]]
+    panel = open_agents(window, qtbot)
+    qtbot.waitUntil(lambda: not terminal.running and not terminal.reader.is_alive(), timeout=10000)
+    window.close_terminal(window.tabs.indexOf(terminal))
+    assert session["id"] in panel.session_rows
+    assert panel.saved.isVisible()
+    assert panel.resume.isVisible()
+
+
+@pytest.mark.parametrize("accepted", [False, True])
+def test_cancelled_or_failed_ad_hoc_start_does_not_create_links(window, qtbot, monkeypatch, accepted):
+    item = window.notebook.add("Selected todo must not be used")
+    window.tasks.rebuild(select=item["id"])
+    monkeypatch.setattr(SessionDialog, "probe", lambda self: None)
+    monkeypatch.setattr("app.agents.base.executable_path", lambda name: sys.executable)
+    window.notebook.data["settings"]["default_workdir"] = str(window.store.folder)
+
+    def accept(dialog):
+        if accepted:
+            dialog.check()
+        return dialog.result()
+
+    monkeypatch.setattr(SessionDialog, "exec", accept)
+    calls = []
+
+    def fail(session, command, **kwargs):
+        calls.append(session)
+        return False
+
+    monkeypatch.setattr(window, "launch", fail)
+    panel = open_agents(window, qtbot)
+    qtbot.mouseClick(panel.new_session, Qt.LeftButton)
+    assert not window.notebook.data["sessions"]
+    assert window.notebook.items == [item]
+    assert not panel.session_rows
+    assert len(calls) == int(accepted)
+    if accepted:
+        assert calls[0]["item_id"] is None
+
+
+def test_ad_hoc_sidebar_state_restored_from_disk_and_label_refreshes(window, qtbot):
+    _, visible = attach(window, "Saved pin")
+    _, hidden = attach(window, "Removed pin")
+    visible["item_id"] = hidden["item_id"] = None
+    hidden["agents_hidden"] = True
+    assert window.save_all()
+    window.notebook.data = window.store.load()
+    panel = open_agents(window, qtbot)
+    assert set(panel.session_rows) == {visible["id"]}
+    saved = window.session(visible["id"])
+    saved["title"] = "Renamed ad-hoc chat"
+    window.session_changed(saved["id"])
+    assert "Renamed ad-hoc chat" in panel.session_rows[saved["id"]].text(0)
+    assert "Renamed ad-hoc chat" in panel.title.text()
+
+
+def test_sidebar_uses_full_width_and_subtle_right_aligned_trash(window, qtbot):
+    _, session = attach(window, "A comfortably long session title")
+    session["item_id"] = None
+    panel = open_agents(window, qtbot)
+    panel.splitter.setSizes([320, 900])
+    panel.tree.setStyleSheet(Template(STYLESHEET).substitute(LIGHT))
+    qtbot.wait(50)
+    tree = panel.tree
+    assert panel.new_session.text() == "Session"
+    assert not panel.new_session.icon().isNull()
+    assert tree.font().pixelSize() == 15
+    assert not tree.header().stretchLastSection()
+    assert tree.columnWidth(1) == 30
+    assert tree.columnWidth(0) >= tree.viewport().width() - 32
+    button = tree.itemWidget(panel.session_rows[session["id"]], 1)
+    assert isinstance(button, QToolButton) and button.autoRaise()
+    assert button.iconSize().width() == 14
+    assert button.geometry().right() >= tree.viewport().width() - 8
+    before = tree.columnWidth(0)
+    panel.splitter.setSizes([430, 790])
+    qtbot.waitUntil(lambda: tree.columnWidth(0) > before)
+    assert tree.columnWidth(0) >= tree.viewport().width() - 32
+
+
+@pytest.mark.parametrize("standalone", [False, True])
+@pytest.mark.parametrize("label", ["  My custom session  ", "   "])
+def test_optional_session_title_is_used_and_persisted(window, qtbot, monkeypatch, standalone, label):
+    item = window.notebook.add("Original todo title")
+    window.tasks.rebuild(select=item["id"])
+    window.notebook.data["settings"].update(default_agent="codex", default_workdir=str(window.store.folder))
+    monkeypatch.setattr(SessionDialog, "probe", lambda self: None)
+    monkeypatch.setattr("app.agents.base.executable_path", lambda name: sys.executable)
+
+    def accept(dialog):
+        dialog.title.setText(label)
+        dialog.check()
+        return dialog.result()
+
+    monkeypatch.setattr(SessionDialog, "exec", accept)
+    real_launch = window.launch
+    monkeypatch.setattr(window, "launch", lambda session, command, **kwargs: real_launch(
+        session, [sys.executable, "-u", "-c", "print('TITLED_SESSION')"], **kwargs))
+    panel = open_agents(window, qtbot)
+    window.start_session(standalone=standalone)
+    session = window.notebook.data["sessions"][0]
+    expected = label.strip() or ("Ad-hoc session" if standalone else item["text"])
+    assert session["title"] == expected
+    assert session["title_custom"] == bool(label.strip())
+    assert expected in panel.session_rows[session["id"]].text(0)
+    if label.strip() and not standalone:
+        window.notebook.update(item["id"], text="Renamed todo")
+        window.schedule_save()
+        assert expected in panel.session_rows[session["id"]].text(0)
+        assert "Renamed todo" not in panel.session_rows[session["id"]].text(0)
+    assert window.save_all()
+    assert window.store.load()["sessions"][0]["title"] == expected
+
+
+def test_unread_reply_dot_clears_only_when_session_is_viewed(window, qtbot, monkeypatch):
+    _, first = attach(window, "Current session")
+    _, unread = attach(window, "Session with new reply")
+    first["item_id"] = unread["item_id"] = None
+    monkeypatch.setattr(window, "isActiveWindow", lambda: True)
+    panel = open_agents(window, qtbot)
+    snapshot = dict(output="A new assistant answer", message="reply-1", busy=False, failed=False)
+    window.apply_agent_snapshot(unread["id"], snapshot)
+    assert unread["reply_unread"]
+    assert panel.session_rows[unread["id"]].text(0).startswith("● ")
+    assert "Unread agent reply" in panel.session_rows[unread["id"]].toolTip(0)
+    assert window.save_all()
+    assert window.store.load()["sessions"][1]["reply_unread"]
+    panel.tree.setCurrentItem(panel.session_rows[unread["id"]])
+    assert "A new assistant answer" in panel.reply.toPlainText()
+    assert not unread["reply_unread"]
+    assert not panel.session_rows[unread["id"]].text(0).startswith("● ")
+    assert not window.store.load()["sessions"][1]["reply_unread"]
+    window.apply_agent_snapshot(unread["id"], snapshot)
+    assert not unread["reply_unread"]
+    monkeypatch.setattr(window, "isActiveWindow", lambda: False)
+    window.apply_agent_snapshot(unread["id"], dict(snapshot, output="Another answer", message="reply-2"))
+    assert unread["reply_unread"]
+    assert panel.session_rows[unread["id"]].text(0).startswith("● ")
+    monkeypatch.setattr(window, "isActiveWindow", lambda: True)
+    panel.refresh()
+    assert not unread["reply_unread"]
+
+
+def test_plain_terminal_output_is_not_an_unread_agent_reply(window, qtbot):
+    _, first = attach(window, "Current")
+    _, second = attach(window, "Terminal only")
+    first["item_id"] = second["item_id"] = None
+    panel = open_agents(window, qtbot)
+    assert window.launch(second, [sys.executable, "-u", "-c", "print('OUTPUT_NOT_A_REPLY')"])
+    terminal = window.terminals[second["id"]]
+    qtbot.waitUntil(lambda: not terminal.running, timeout=10000)
+    terminal.unread = True
+    window.session_changed(second["id"])
+    assert not panel.session_rows[second["id"]].text(0).startswith("● ")
+    terminal.agent_message = True
+    window.session_changed(second["id"])
+    assert panel.session_rows[second["id"]].text(0).startswith("● ")
+
+
+def test_sidebar_shows_only_title_and_agent_with_status_in_tooltip(window, qtbot):
+    _, session = attach(window, "My session")
+    session["item_id"] = None
+    panel = open_agents(window, qtbot)
+    row = panel.session_rows[session["id"]]
+    assert row.text(0) == "My session · opencode"
+    assert "Saved session" in row.toolTip(0)
+    assert window.launch(session, [sys.executable, "-u", "-c", "import time; time.sleep(5)"])
+    terminal = window.terminals[session["id"]]
+    window.session_changed(session["id"])
+    assert row.text(0) == "My session · opencode"
+    assert "Terminal running" in row.toolTip(0)
+    terminal.agent_state = "Agent running"
+    window.session_changed(session["id"])
+    assert row.text(0) == "My session · opencode"
+    assert "Agent running" in row.toolTip(0)

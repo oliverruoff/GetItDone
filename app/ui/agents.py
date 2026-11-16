@@ -1,12 +1,14 @@
 """Vertical task/session tabs sharing the existing integrated terminal widgets."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QPushButton,
     QSplitter,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -14,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.common import SafeBrowser
+from app.ui.icons import icon
 
 
 class Agents(QWidget):
@@ -32,8 +35,21 @@ class Agents(QWidget):
         sidebar = QWidget()
         side_layout = QVBoxLayout(sidebar)
         side_layout.setContentsMargins(0, 0, 0, 0)
-        side_layout.addWidget(QLabel("Open todos · Attached sessions"))
+        self.new_session = QPushButton("Session")
+        self.new_session.setIcon(icon("plus"))
+        self.new_session.setObjectName("addSession")
+        self.new_session.setAccessibleName("New session")
+        self.new_session.setToolTip("Start an agent session without a todo")
+        self.new_session.clicked.connect(lambda: window.start_session(standalone=True))
+        side_layout.addWidget(self.new_session)
+        side_layout.addWidget(QLabel("Pinned sessions · Open todos"))
         self.tree = QTreeWidget()
+        self.tree.setColumnCount(2)
+        self.tree.header().setMinimumSectionSize(26)
+        self.tree.header().setStretchLastSection(False)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tree.header().setSectionResizeMode(1, QHeaderView.Fixed)
+        self.tree.setColumnWidth(1, 30)
         self.tree.setObjectName("agentTabs")
         self.tree.setHeaderHidden(True)
         self.tree.setIndentation(18)
@@ -44,7 +60,7 @@ class Agents(QWidget):
         self.tree.setMinimumWidth(180)
         self.tree.currentItemChanged.connect(self.selection_changed)
         side_layout.addWidget(self.tree)
-        self.sidebar_empty = QLabel("No open todo has an attached agent session.")
+        self.sidebar_empty = QLabel("No pinned sessions yet. Start an ad-hoc session or attach one to an open todo.")
         self.sidebar_empty.setWordWrap(True)
         side_layout.addWidget(self.sidebar_empty)
         self.splitter.addWidget(sidebar)
@@ -90,9 +106,12 @@ class Agents(QWidget):
     def refresh(self):
         book = self.window.notebook
         sessions = {}
+        standalone = []
         for session in book.data["sessions"]:
             item = book.get(session["item_id"])
-            if item and not item["done"]:
+            if session["item_id"] is None and not session.get("agents_hidden"):
+                standalone.append(session)
+            elif item and not item["done"]:
                 sessions.setdefault(item["id"], []).append(session)
         visible = set(sessions)
         for ident in sessions:
@@ -101,6 +120,7 @@ class Agents(QWidget):
             tuple((item["id"], item["parent_id"], item["position"], item["text"])
                   for item in book.items if item["id"] in visible),
             tuple((ident, tuple(s["id"] for s in linked)) for ident, linked in sessions.items()),
+            tuple(s["id"] for s in standalone),
         )
         if signature != self.signature:
             collapsed = {ident for ident, row in self.rows.items() if not row.isExpanded()}
@@ -134,6 +154,22 @@ class Agents(QWidget):
                     add_children(ident, row)
                     row.setExpanded(ident not in collapsed)
 
+            for session in standalone:
+                row = QTreeWidgetItem()
+                row.setData(0, Qt.UserRole, session["id"])
+                self.tree.addTopLevelItem(row)
+                self.session_rows[session["id"]] = row
+                button = QToolButton()
+                button.setObjectName("unpinSession")
+                button.setIcon(icon("trash"))
+                button.setIconSize(QSize(14, 14))
+                button.setAutoRaise(True)
+                button.setFixedSize(26, 26)
+                button.setAccessibleName("Remove session from sidebar")
+                button.setToolTip("Remove from sidebar · Keeps history and running agent")
+                button.clicked.connect(lambda checked=False, ident=session["id"]: QTimer.singleShot(
+                    0, lambda: self.unpin_session(ident)))
+                self.tree.setItemWidget(row, 1, button)
             add_children()
             self.signature = signature
             if self.selected_session not in self.session_rows:
@@ -151,14 +187,22 @@ class Agents(QWidget):
             status = "Saved session"
             if terminal:
                 status = (getattr(terminal, "agent_state", None) or "Terminal running") if terminal.running else "Ended"
-            unread = session.get("reply_unread") or terminal and (
-                terminal.unread or getattr(terminal, "agent_message", False)
-            )
-            title = item["text"] if row is self.rows[item["id"]] else session["title"]
-            row.setText(0, ("● " if unread else "") + f"{title} · {session['agent']} · {status}")
-            row.setToolTip(0, f"{item['text']}\n{session['title']}\n{session['workdir']}\n{status}")
+            unread = session.get("reply_unread") or terminal and getattr(terminal, "agent_message", False)
+            title = (item["text"] if item and row is self.rows[item["id"]]
+                     and not session.get("title_custom") else session["title"])
+            row.setText(0, ("● " if unread else "") + f"{title} · {session['agent']}")
+            context = item["text"] if item else "Ad-hoc session · No todo"
+            row.setToolTip(0, f"{context}\n{session['title']}\n{session['workdir']}\n{status}"
+                           + ("\nUnread agent reply" if unread else ""))
         self.sidebar_empty.setVisible(not self.session_rows)
         self.show_selected()
+
+    def unpin_session(self, ident):
+        session = self.window.session(ident)
+        if session and session["item_id"] is None:
+            session["agents_hidden"] = True
+            self.window.schedule_save()
+            self.window.select_session(self.selected_session)
 
     def selection_changed(self, row, previous):
         ident = row.data(0, Qt.UserRole) if row else None
@@ -199,6 +243,15 @@ class Agents(QWidget):
             self.reply.setMarkdown("No saved assistant reply available.")
         if self.active():
             self.window.visibility()
+            if self.window.isActiveWindow() and self.window.isVisible() and not self.window.isMinimized() and session:
+                unread = session.get("reply_unread")
+                message = terminal and getattr(terminal, "agent_message", False)
+                if unread or message:
+                    session["reply_unread"] = False
+                    if terminal:
+                        terminal.agent_message = False
+                    self.window.schedule_save()
+                    self.window.session_changed(session["id"])
 
     def activate(self):
         if self.window.terminal_popout:

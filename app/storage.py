@@ -77,8 +77,9 @@ def validate(data):
                 fail("Invalid reminder date or time.")
     for session in data["sessions"]:
         if (
-            not isinstance(session.get("item_id"), str)
-            or session.get("item_id") not in items
+            "item_id" not in session
+            or (session["item_id"] is not None and (
+                not isinstance(session["item_id"], str) or session["item_id"] not in items))
             or not all(isinstance(session.get(k), str) for k in ("agent", "workdir", "title", "created_at"))
             or not isinstance(session.get("native_session_id"), (str, type(None)))
         ):
@@ -92,6 +93,10 @@ def validate(data):
             fail("Invalid saved agent reply.")
         if "reply_unread" in session and type(session["reply_unread"]) is not bool:
             fail("Invalid agent reply state.")
+        if "agents_hidden" in session and type(session["agents_hidden"]) is not bool:
+            fail("Invalid agent sidebar state.")
+        if "title_custom" in session and type(session["title_custom"]) is not bool:
+            fail("Invalid session title state.")
         process_runs = session.get("process_runs", [])
         if not isinstance(process_runs, list):
             fail("Invalid agent process history.")

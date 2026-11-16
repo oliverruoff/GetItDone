@@ -86,7 +86,7 @@ class Canvas(QWidget):
             error(self, f"Could not start Canvas agent: {exc}")
             return
         self.terminals.append(terminal)
-        index = self.tabs.addTab(terminal, dialog.agent.currentText())
+        index = self.tabs.addTab(terminal, dialog.title.text().strip() or dialog.agent.currentText())
         self.tabs.setCurrentIndex(index)
         self.tabs.show()
         self.splitter.setSizes([650, 300])

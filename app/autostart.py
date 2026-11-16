@@ -16,7 +16,11 @@ def launch_command():
     executable = Path(sys.executable)
     if sys.platform == "win32" and executable.with_name("pythonw.exe").exists():
         executable = executable.with_name("pythonw.exe")
-    return [str(executable), "-m", "app"]
+    # Login startup has no predictable working directory. Bootstrap the checkout
+    # explicitly, including source environments that were not installed editable.
+    root = str(Path(__file__).resolve().parents[1])
+    code = f"import sys; sys.path.insert(0, {root!r}); from app.launcher import main; main()"
+    return [str(executable), "-c", code]
 
 
 def enabled():

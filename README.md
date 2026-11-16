@@ -12,6 +12,24 @@ The screenshots show the macOS interface with example data.
 Everforest dark theme. Save to apply it immediately to menus, dialogs, task colors
 and integrated terminals; your choice is kept for the next launch.
 
+**File → Settings → General → Startup** enables automatic startup when you sign in.
+This applies only to your user account and requires no administrator privileges.
+
+## Agents
+
+In **Agents**, click **+ Session** to start or link an agent session
+without a todo. Choose the agent and working directory as usual. These sessions
+stay pinned on the left, including after closing a terminal or restarting GetItDone.
+Enter an optional **Session title** when starting, or use **Session details** to
+change it later. Custom titles are also shown for todo-linked sessions. A **●**
+marks unread agent replies where the agent reports them; opening the session
+clears the marker. Ordinary terminal output is not treated as an agent reply.
+
+The small trash icon removes an ad-hoc session only from the sidebar. It does not
+stop a running agent or delete the saved session/history. You can still find it in
+**Executions**; opening or resuming it pins it again. Todo-linked sessions continue
+to appear under their open tasks.
+
 ## Canvas
 
 The **Canvas** tab displays a freely editable local HTML page. Use **Open agent …**

@@ -1,6 +1,7 @@
 import json
 import zipfile
 
+import pytest
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import QWidget
 
@@ -69,7 +70,8 @@ def test_canvas_displays_local_html(qtbot, tmp_path):
     assert canvas.view.url() == QUrl.fromLocalFile(str((folder / "canvas.html").resolve()))
 
 
-def test_canvas_agent_uses_fixed_folder(qtbot, tmp_path, monkeypatch):
+@pytest.mark.parametrize("title", ["", "My Canvas session"])
+def test_canvas_agent_uses_fixed_folder(qtbot, tmp_path, monkeypatch, title):
     from app.ui import canvas as module
 
     calls = []
@@ -79,6 +81,10 @@ def test_canvas_agent_uses_fixed_folder(qtbot, tmp_path, monkeypatch):
             calls.append(fixed_directory)
             self.command = ["fake-agent"]
             self.agent = self
+            self.title = self
+
+        def text(self):
+            return title
 
         def setWindowTitle(self, title):
             pass
@@ -102,5 +108,6 @@ def test_canvas_agent_uses_fixed_folder(qtbot, tmp_path, monkeypatch):
     canvas.open_agent()
     assert calls == [canvas.folder.resolve(), (["fake-agent"], str(canvas.folder.resolve()))]
     assert canvas.tabs.count() == 1 and len(canvas.terminals) == 1
+    assert canvas.tabs.tabText(0) == (title or "Test agent")
     canvas.close_terminal(0)
     assert canvas.tabs.count() == 0 and not canvas.terminals

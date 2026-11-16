@@ -41,7 +41,8 @@ def execution_records(notebook, terminals):
             reply = run.get("last_reply") or {}
             records.append(dict(
                 id=run["id"], title=f"{session['title']} · Session #{index}", agent=session["agent"],
-                origin="Resumed" if run.get("resumed") else "Todo", status=state, active=active,
+                origin="Resumed" if run.get("resumed") else (
+                    "Ad-hoc" if session["item_id"] is None else "Todo"), status=state, active=active,
                 started_at=run["started_at"], finished_at=run.get("finished_at"), session_id=session["id"],
                 job_id=None, run_id=None, output=reply.get("text", ""), output_agent=None,
                 workdir=session["workdir"], prompt=""))

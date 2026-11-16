@@ -49,6 +49,11 @@ class SessionDialog(QDialog):
             self.agent.addItem(agent.name, ident)
         self.agent.setCurrentIndex(max(0, self.agent.findData(settings.get("default_agent"))))
         layout.addRow("Agent", self.agent)
+        self.title = QLineEdit()
+        self.title.setAccessibleName("Session title (optional)")
+        self.title.setPlaceholderText("Leave empty to use the default title")
+        self.title.setClearButtonEnabled(True)
+        layout.addRow("Session title (optional)", self.title)
         line = QHBoxLayout()
         self.workdir = QLineEdit(str(session_folder(settings)))
         if fixed_directory is not None:
@@ -308,10 +313,12 @@ class SettingsDialog(QDialog):
         from app import autostart
 
         self.autostart = QCheckBox("Start GetItDone when I sign in")
+        self.autostart.setToolTip("Start automatically at login for this user. No administrator privileges required.")
         try:
             self.autostart.setChecked(autostart.enabled())
-        except OSError:
+        except OSError as exc:
             self.autostart.setEnabled(False)
+            self.autostart.setToolTip(f"Startup settings are unavailable: {exc}")
         self.initial_autostart = self.autostart.isChecked()
         form.addRow("Startup", self.autostart)
         path = QLineEdit(str(data_path))
