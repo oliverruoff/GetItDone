@@ -8,7 +8,7 @@ import threading
 from collections import deque
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QColor
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import (
@@ -96,6 +96,10 @@ class Terminal(QWebEngineView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Isolate WebEngine's GPU surface in this child, as in Canvas. The first
+        # terminal must not recreate (and briefly hide) the visible main window.
+        self.setAttribute(Qt.WA_DontCreateNativeAncestors)
+        self.setAttribute(Qt.WA_NativeWindow)
         self.process = None
         self.dimensions = (100, 28)
         self.unread = False

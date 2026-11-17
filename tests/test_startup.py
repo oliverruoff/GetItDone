@@ -109,6 +109,87 @@ print('CANVAS_WINDOW_STABLE_OK')
     assert "CANVAS_WINDOW_STABLE_OK" in result.stdout
 
 
+@pytest.mark.parametrize("maximized", [False, True])
+@pytest.mark.parametrize("resumed", [False, True], ids=["new", "resume"])
+@pytest.mark.parametrize("workspace", ["tasks", "agents"])
+def test_first_session_loads_inline_without_recreating_window(tmp_path, maximized, resumed, workspace):
+    # Exercise the first WebEngine terminal in a fresh process, not a warmed-up Qt application.
+    code = """
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+from PySide6.QtCore import QEvent, QEventLoop, QObject, QTimer
+from PySide6.QtWidgets import QApplication
+from app.models import now_iso, uid
+from app.storage import Store
+from app.ui.window import Window
+import app.ui.window as window_module
+import app.agents.base as agent_base
+
+app = QApplication([])
+store = Store(Path(sys.argv[1]))
+window = Window(store, store.load())
+window.timer.stop()
+window.showMaximized() if sys.argv[2] == 'True' else window.show()
+app.processEvents()
+if sys.argv[4] == 'agents':
+    window.workspace.setCurrentIndex(window.optional_pages['agents']['index'])
+    app.processEvents()
+    assert window.optional_pages['agents']['widget'] is not None
+native_id = int(window.winId())
+geometry = window.geometry()
+state = window.windowState()
+events = []
+
+class Watcher(QObject):
+    def eventFilter(self, obj, event):
+        if event.type() in (QEvent.Hide, QEvent.WinIdChange):
+            events.append(event.type())
+        return False
+
+watcher = Watcher()
+window.installEventFilter(watcher)
+assert not any(name.startswith('PySide6.QtWebEngine') for name in sys.modules)
+command = [sys.executable, '-u', '-c', "import time; print('INLINE_READY', flush=True); time.sleep(0.3)"]
+if sys.argv[3] == 'True':
+    session = dict(id=uid(), item_id=None, agent='opencode', title='Saved session',
+                   workdir=str(store.folder), native_session_id='ses_' + uid().replace('-', ''),
+                   created_at=now_iso())
+    window.notebook.data['sessions'].append(session)
+    agent_base.executable_path = lambda name: sys.executable
+    real_launch = window.launch
+    window.launch = lambda saved, ignored, **kwargs: real_launch(saved, command, **kwargs)
+    window.resume_session(session['id'])
+else:
+    dialog = SimpleNamespace(exec=lambda: True, agent=SimpleNamespace(currentData=lambda: 'opencode'),
+                             title=SimpleNamespace(text=lambda: 'New session'),
+                             native_session_id='ses_' + uid().replace('-', ''), directory=str(store.folder),
+                             command=command, linking_existing=False)
+    window_module.SessionDialog = lambda *args: dialog
+    window.start_session(standalone=True)
+    session = window.notebook.data['sessions'][0]
+terminal = window.terminals[session['id']]
+loop = QEventLoop()
+QTimer.singleShot(1500, loop.quit)
+loop.exec()
+assert terminal.ready_state
+assert not events, events
+assert int(window.winId()) == native_id
+assert window.isVisible()
+assert window.geometry() == geometry
+assert window.windowState() == state
+assert window.tabs.currentWidget() is terminal
+assert window.selected_session == session['id']
+window.quit_app()
+window.finish_quit()
+print('SESSION_WINDOW_STABLE_OK')
+"""
+    result = subprocess.run([sys.executable, "-B", "-c", code, str(tmp_path), str(maximized),
+                             str(resumed), workspace], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "SESSION_WINDOW_STABLE_OK" in result.stdout
+
+
 def test_todos_edit_and_persist_before_optional_tabs_load(window, qtbot):
     window.append_item()
     editor = window.tasks.tree.focusWidget()

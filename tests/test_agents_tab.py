@@ -3,13 +3,13 @@ from string import Template
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QToolButton
+from PySide6.QtWidgets import QApplication, QMenu, QToolButton
 
 from app.executions import execution_records
 from app.models import now_iso, uid
 from app.storage import Store
 from app.ui.dialogs import SessionDialog
-from app.ui.theme import LIGHT, STYLESHEET
+from app.ui.theme import EVERFOREST, LIGHT, STYLESHEET
 from app.ui.window import Window
 
 
@@ -128,6 +128,7 @@ def test_agents_reuses_real_terminals_switches_visibility_and_preserves_processe
     assert first_terminal.isVisible()
     assert not panel.saved.isVisible()
     assert panel.content.isAncestorOf(first_terminal)
+    assert window.terminal_panel.x() == 12
     assert panel.content.width() > panel.splitter.widget(0).width()
     panel.tree.setCurrentItem(panel.session_rows[second["id"]])
     assert window.tabs.currentWidget() is second_terminal
@@ -247,7 +248,7 @@ def test_ad_hoc_pin_persists_and_trash_only_hides_running_session(window, qtbot)
     assert "Pinned ad-hoc session" in panel.session_rows[session["id"]].text(0)
     assert window.save_all()
     assert not window.store.load()["sessions"][0].get("agents_hidden")
-    button = panel.tree.itemWidget(panel.session_rows[session["id"]], 1)
+    button = panel.tree.itemWidget(panel.session_rows[session["id"]], 1).findChild(QToolButton)
     qtbot.mouseClick(button, Qt.LeftButton)
     qtbot.waitUntil(lambda: session["id"] not in panel.session_rows)
     assert terminal.running
@@ -273,6 +274,144 @@ def test_ended_ad_hoc_session_stays_pinned_after_terminal_close(window, qtbot):
     assert session["id"] in panel.session_rows
     assert panel.saved.isVisible()
     assert panel.resume.isVisible()
+
+
+def test_trash_button_opens_empty_view_and_returns_to_sessions(window, qtbot):
+    panel = open_agents(window, qtbot)
+    assert panel.trash_button.text() == "Trash · 0"
+    qtbot.mouseClick(panel.trash_button, Qt.LeftButton)
+    assert panel.trash_panel.isVisible()
+    assert not panel.tree.isVisible()
+    assert not panel.sidebar_empty.isVisible()
+    assert panel.trash_empty.isVisible()
+    assert "Trash is empty" in panel.trash_empty.text()
+    assert not panel.restore_button.isEnabled()
+    assert panel.trash_button.text() == "Back to sessions · 0"
+    qtbot.mouseClick(panel.trash_button, Qt.LeftButton)
+    assert panel.tree.isVisible()
+    assert panel.sidebar_empty.isVisible()
+    assert not panel.trash_panel.isVisible()
+
+
+def test_removed_session_restores_from_trash_without_resuming_or_losing_history(window, qtbot, monkeypatch):
+    _, session = attach(window, "Recover this chat")
+    session["item_id"] = None
+    session["last_reply"] = {"text": "Preserved answer", "saved_at": now_iso()}
+    panel = open_agents(window, qtbot)
+    button = panel.tree.itemWidget(panel.session_rows[session["id"]], 1).findChild(QToolButton)
+    qtbot.mouseClick(button, Qt.LeftButton)
+    qtbot.waitUntil(lambda: session["id"] not in panel.session_rows)
+    assert panel.trash_button.text() == "Trash · 1"
+    assert window.store.load()["sessions"][0]["agents_hidden"]
+    before = dict(session)
+
+    def unexpected_launch(*args, **kwargs):
+        raise AssertionError("Restoring must not launch a process")
+
+    monkeypatch.setattr(window, "launch", unexpected_launch)
+    qtbot.mouseClick(panel.trash_button, Qt.LeftButton)
+    row = panel.trash_list.item(0)
+    assert row.text() == "Recover this chat\nopencode"
+    row.setSelected(True)
+    assert panel.restore_button.isEnabled()
+    qtbot.mouseClick(panel.restore_button, Qt.LeftButton)
+    assert session == dict(before, agents_hidden=False)
+    assert panel.tree.isVisible() and not panel.trash_panel.isVisible()
+    assert panel.selected_session == window.selected_session == session["id"]
+    assert panel.tree.currentItem() is panel.session_rows[session["id"]]
+    assert "Preserved answer" in panel.reply.toPlainText()
+    assert panel.resume.isVisible()
+    assert not window.terminals
+    assert panel.trash_button.text() == "Trash · 0"
+    assert window.save_all()
+    assert not window.store.load()["sessions"][0]["agents_hidden"]
+
+
+def test_trash_search_and_bulk_restore_survive_reload(window, qtbot):
+    _, first = attach(window, "First recoverable chat")
+    _, second = attach(window, "Second recoverable chat")
+    _, other = attach(window, "Keep in trash")
+    _, linked = attach(window, "Linked todo session")
+    for session in (first, second, other):
+        session.update(item_id=None, agents_hidden=True)
+    linked["agents_hidden"] = True  # Only sessions removed with the trash icon belong here.
+    assert window.save_all()
+    window.notebook.data = window.store.load()
+    panel = open_agents(window, qtbot)
+    assert panel.trash_button.text() == "Trash · 3"
+    qtbot.mouseClick(panel.trash_button, Qt.LeftButton)
+    panel.trash_search.setText("RECOVERABLE")
+    assert not panel.trash_list.item(0).isHidden()
+    assert not panel.trash_list.item(1).isHidden()
+    assert panel.trash_list.item(2).isHidden()
+    panel.trash_list.item(0).setSelected(True)
+    panel.trash_list.item(1).setSelected(True)
+    assert panel.restore_button.text() == "Restore 2 sessions"
+    qtbot.mouseClick(panel.restore_button, Qt.LeftButton)
+    assert set(panel.session_rows) == {first["id"], second["id"], linked["id"]}
+    assert panel.trash_list.count() == 1
+    assert panel.trash_button.text() == "Trash · 1"
+    assert window.session(other["id"])["agents_hidden"]
+    assert window.save_all()
+    saved = {session["id"]: session for session in window.store.load()["sessions"]}
+    assert not saved[first["id"]]["agents_hidden"]
+    assert not saved[second["id"]]["agents_hidden"]
+    assert saved[other["id"]]["agents_hidden"]
+
+
+def test_trash_filter_deselects_hidden_results_and_refreshes_titles(window, qtbot):
+    _, session = attach(window, "Hidden chat")
+    session.update(item_id=None, agents_hidden=True)
+    panel = open_agents(window, qtbot)
+    qtbot.mouseClick(panel.trash_button, Qt.LeftButton)
+    panel.trash_list.item(0).setSelected(True)
+    panel.trash_search.setText("does not exist")
+    assert panel.trash_empty.isVisible()
+    assert panel.trash_empty.text() == "No matching sessions."
+    assert not panel.restore_button.isEnabled()
+    panel.restore_sessions()
+    assert session["agents_hidden"]
+    panel.trash_search.clear()
+    panel.trash_list.item(0).setSelected(True)
+    session["title"] = "Updated hidden chat"
+    window.session_changed(session["id"])
+    assert panel.trash_list.item(0).text().startswith("Updated hidden chat")
+    assert panel.restore_button.isEnabled()
+    panel.trash_search.setText(str(window.store.folder))
+    assert not panel.trash_list.item(0).isHidden()
+
+
+def test_restoring_running_session_reuses_terminal_and_keeps_process(window, qtbot):
+    _, session = attach(window, "Running recoverable chat")
+    session["item_id"] = None
+    assert window.launch(session, [sys.executable, "-u", "-c", "import time; time.sleep(5)"])
+    terminal = window.terminals[session["id"]]
+    panel = open_agents(window, qtbot)
+    panel.unpin_session(session["id"])
+    qtbot.mouseClick(panel.trash_button, Qt.LeftButton)
+    assert terminal.running
+    panel.trash_list.item(0).setSelected(True)
+    qtbot.mouseClick(panel.restore_button, Qt.LeftButton)
+    assert window.terminals[session["id"]] is terminal
+    assert window.tabs.count() == 1
+    assert terminal.running and terminal.seen
+    assert window.tabs.currentWidget() is terminal
+
+
+@pytest.mark.parametrize("colors", [LIGHT, EVERFOREST], ids=["light", "everforest"])
+def test_trash_view_fits_sidebar_and_uses_themed_controls(window, qtbot, colors):
+    _, session = attach(window, "A long removed session title that should still be easy to browse")
+    session.update(item_id=None, agents_hidden=True)
+    panel = open_agents(window, qtbot)
+    panel.setStyleSheet(Template(STYLESHEET).substitute(colors))
+    qtbot.mouseClick(panel.trash_button, Qt.LeftButton)
+    qtbot.wait(50)
+    sidebar = panel.splitter.widget(0)
+    assert panel.trash_panel.width() <= sidebar.width()
+    assert panel.trash_search.width() <= sidebar.width() - 16
+    assert panel.trash_list.visualItemRect(panel.trash_list.item(0)).height() >= 48
+    assert not panel.trash_panel.grab().isNull()
+    assert panel.trash_list.palette().base().color().name() == colors["base"]
 
 
 @pytest.mark.parametrize("accepted", [False, True])
@@ -322,28 +461,109 @@ def test_ad_hoc_sidebar_state_restored_from_disk_and_label_refreshes(window, qtb
     assert "Renamed ad-hoc chat" in panel.title.text()
 
 
-def test_sidebar_uses_full_width_and_subtle_right_aligned_trash(window, qtbot):
+@pytest.mark.parametrize("sidebar_width", [300, 430])
+def test_content_has_padding_to_the_right_of_sidebar_splitter(window, qtbot, sidebar_width):
+    attach(window, "Saved session")
+    panel = open_agents(window, qtbot)
+    panel.splitter.setSizes([sidebar_width, 900])
+    qtbot.wait(50)
+    assert panel.content_layout.contentsMargins().left() == 12
+    assert panel.title.x() == 12
+    assert panel.saved.x() == 12
+    assert panel.resume.x() == 12
+
+
+@pytest.mark.parametrize("colors", [LIGHT, EVERFOREST], ids=["light", "everforest"])
+def test_sidebar_uses_full_width_and_subtle_right_aligned_trash(window, qtbot, colors):
     _, session = attach(window, "A comfortably long session title")
     session["item_id"] = None
     panel = open_agents(window, qtbot)
     panel.splitter.setSizes([320, 900])
-    panel.tree.setStyleSheet(Template(STYLESHEET).substitute(LIGHT))
+    panel.tree.setStyleSheet(Template(STYLESHEET).substitute(colors))
     qtbot.wait(50)
     tree = panel.tree
     assert panel.new_session.text() == "Session"
     assert not panel.new_session.icon().isNull()
     assert tree.font().pixelSize() == 15
+    assert tree.frameWidth() == 0
+    assert tree.viewport().geometry().left() == 0
     assert not tree.header().stretchLastSection()
     assert tree.columnWidth(1) == 30
     assert tree.columnWidth(0) >= tree.viewport().width() - 32
-    button = tree.itemWidget(panel.session_rows[session["id"]], 1)
+    actions = tree.itemWidget(panel.session_rows[session["id"]], 1)
+    button = actions.findChild(QToolButton)
     assert isinstance(button, QToolButton) and button.autoRaise()
     assert button.iconSize().width() == 14
-    assert button.geometry().right() >= tree.viewport().width() - 8
+    assert button.focusPolicy() == Qt.NoFocus
+    assert abs(button.geometry().center().x() - actions.rect().center().x()) <= 1
+    assert abs(button.geometry().center().y() - actions.rect().center().y()) <= 1
+    assert actions.geometry().right() >= tree.viewport().width() - 8
+    assert panel.new_session.x() == 8
+    assert panel.new_session.width() == panel.splitter.widget(0).width() - 16
     before = tree.columnWidth(0)
     panel.splitter.setSizes([430, 790])
     qtbot.waitUntil(lambda: tree.columnWidth(0) > before)
     assert tree.columnWidth(0) >= tree.viewport().width() - 32
+
+
+@pytest.mark.parametrize("standalone", [False, True])
+def test_session_context_menu_renames_and_persists_without_changing_todo(
+        window, qtbot, monkeypatch, standalone):
+    item, session = attach(window, "Original session")
+    if standalone:
+        session["item_id"] = None
+    panel = open_agents(window, qtbot)
+    calls = []
+
+    def rename_dialog(parent, title, label, **kwargs):
+        calls.append(kwargs["text"])
+        return "  Renamed session  ", True
+
+    class RenameMenu(QMenu):
+        def exec(self, position):
+            assert [action.text() for action in self.actions()] == ["Rename …"]
+            self.actions()[0].trigger()
+
+    monkeypatch.setattr("app.ui.agents.QInputDialog.getText", rename_dialog)
+    monkeypatch.setattr("app.ui.agents.QMenu", RenameMenu)
+    row = panel.session_rows[session["id"]]
+    position = panel.tree.visualItemRect(row).center()
+    panel.tree.customContextMenuRequested.emit(position)
+    assert calls == ["Original session"]
+    assert session["title"] == "Renamed session"
+    assert session["title_custom"] is True
+    assert item["text"] == "Original session"
+    assert row.text(0) == "Renamed session · opencode"
+    assert "Renamed session" in panel.title.text()
+    assert window.save_all()
+    assert window.store.load()["sessions"][0]["title"] == "Renamed session"
+    if not standalone:
+        window.notebook.update(item["id"], text="Changed todo")
+        window.schedule_save()
+        assert panel.session_rows[session["id"]].text(0) == "Renamed session · opencode"
+
+
+@pytest.mark.parametrize("title, accepted", [("Changed", False), ("   ", True)])
+def test_session_rename_cancel_and_blank_leave_title_unchanged(window, qtbot, monkeypatch, title, accepted):
+    _, session = attach(window, "Original session")
+    panel = open_agents(window, qtbot)
+    monkeypatch.setattr("app.ui.agents.QInputDialog.getText", lambda *args, **kwargs: (title, accepted))
+    panel.rename_session(session["id"])
+    assert session["title"] == "Original session"
+    assert not session.get("title_custom")
+
+
+def test_session_context_menu_ignores_task_groups_and_empty_space(window, qtbot, monkeypatch):
+    group = window.notebook.add("Task group")
+    attach(window, "Child session", group["id"])
+    panel = open_agents(window, qtbot)
+
+    def unexpected_menu(*args):
+        raise AssertionError("Non-session rows must not offer rename")
+
+    monkeypatch.setattr("app.ui.agents.QMenu", unexpected_menu)
+    panel.session_menu(panel.tree.visualItemRect(panel.rows[group["id"]]).center())
+    panel.session_menu(panel.tree.viewport().rect().bottomLeft())
 
 
 @pytest.mark.parametrize("standalone", [False, True])

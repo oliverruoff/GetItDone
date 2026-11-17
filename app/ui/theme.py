@@ -80,16 +80,20 @@ STYLESHEET = """
     QPushButton:focus { border: 2px solid $accent; }
     QPushButton:disabled, QToolButton:disabled { color: $muted; background: $panel; }
     QTreeWidget#taskTree::item { min-height: 24px; }
-    QTreeWidget#agentTabs { font-size: 15px; }
+    QTreeWidget#agentTabs { font-size: 15px; border: none; }
     QTreeWidget#agentTabs::item { min-height: 32px; padding: 3px 5px; }
     QTreeWidget#agentTabs::item:selected { background: $selection; color: $selected_text; }
     QTreeWidget#agentTabs::item:hover { background: $hover; }
-    QPushButton#addSession { text-align: left; padding: 7px 12px; background: $panel;
+    QPushButton#addSession { text-align: left; padding: 9px 16px; background: $panel;
         color: $accent_text; font-weight: 600; }
     QPushButton#addSession:hover { background: $hover; }
     QToolButton#unpinSession { padding: 0; border: none; border-radius: 4px; background: transparent; }
     QToolButton#unpinSession:hover { background: $hover; }
-    QToolButton#unpinSession:focus { border: 1px solid $accent; }
+    QPushButton#sessionTrash { text-align: left; padding: 8px 12px; color: $muted;
+        border: none; background: transparent; }
+    QPushButton#sessionTrash:hover { background: $hover; color: $text; }
+    QPushButton#sessionTrash:checked { background: $selection; color: $selected_text; }
+    QListWidget#sessionTrashList::item { padding: 10px 8px; border-bottom: 1px solid $border; }
     QTreeWidget#taskTree QPushButton { padding: 2px 8px; }
     QPushButton#addTask { text-align: left; padding-left: 18px; background: $panel;
         color: $accent_text; border: 1px solid $accent; font-weight: 600; }

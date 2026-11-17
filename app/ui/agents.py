@@ -5,7 +5,12 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
     QPushButton,
     QSplitter,
     QToolButton,
@@ -28,6 +33,7 @@ class Agents(QWidget):
         self.session_rows = {}
         self.signature = None
         self.reply_signature = None
+        self.trash_signature = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 5, 0, 0)
         self.splitter = QSplitter(Qt.Horizontal)
@@ -41,8 +47,12 @@ class Agents(QWidget):
         self.new_session.setAccessibleName("New session")
         self.new_session.setToolTip("Start an agent session without a todo")
         self.new_session.clicked.connect(lambda: window.start_session(standalone=True))
-        side_layout.addWidget(self.new_session)
-        side_layout.addWidget(QLabel("Pinned sessions · Open todos"))
+        session_layout = QHBoxLayout()
+        session_layout.setContentsMargins(8, 4, 8, 4)
+        session_layout.addWidget(self.new_session)
+        side_layout.addLayout(session_layout)
+        self.sidebar_heading = QLabel("Pinned sessions · Open todos")
+        side_layout.addWidget(self.sidebar_heading)
         self.tree = QTreeWidget()
         self.tree.setColumnCount(2)
         self.tree.header().setMinimumSectionSize(26)
@@ -58,15 +68,60 @@ class Agents(QWidget):
         self.tree.setUniformRowHeights(True)
         self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.tree.setMinimumWidth(180)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.session_menu)
         self.tree.currentItemChanged.connect(self.selection_changed)
         side_layout.addWidget(self.tree)
         self.sidebar_empty = QLabel("No pinned sessions yet. Start an ad-hoc session or attach one to an open todo.")
         self.sidebar_empty.setWordWrap(True)
         side_layout.addWidget(self.sidebar_empty)
+        self.trash_panel = QWidget()
+        trash_layout = QVBoxLayout(self.trash_panel)
+        trash_layout.setContentsMargins(8, 0, 8, 4)
+        trash_title = QLabel("Session trash")
+        trash_title.setObjectName("documentTitle")
+        trash_layout.addWidget(trash_title)
+        trash_hint = QLabel("Removed from the sidebar, not deleted. History and running agents are kept.")
+        trash_hint.setProperty("muted", True)
+        trash_hint.setWordWrap(True)
+        trash_layout.addWidget(trash_hint)
+        self.trash_search = QLineEdit()
+        self.trash_search.setPlaceholderText("Find a removed session …")
+        self.trash_search.setAccessibleName("Search session trash")
+        self.trash_search.setClearButtonEnabled(True)
+        self.trash_search.textChanged.connect(self.filter_trash)
+        trash_layout.addWidget(self.trash_search)
+        self.trash_list = QListWidget()
+        self.trash_list.setObjectName("sessionTrashList")
+        self.trash_list.setToolTip("Select a session to restore. Use Ctrl or Shift to select several.")
+        self.trash_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.trash_list.itemSelectionChanged.connect(self.trash_selection_changed)
+        trash_layout.addWidget(self.trash_list, 1)
+        self.trash_empty = QLabel("Trash is empty. Removed sessions will appear here.")
+        self.trash_empty.setProperty("muted", True)
+        self.trash_empty.setWordWrap(True)
+        trash_layout.addWidget(self.trash_empty)
+        self.restore_button = QPushButton("Restore session")
+        self.restore_button.setIcon(icon("refresh"))
+        self.restore_button.clicked.connect(self.restore_sessions)
+        trash_layout.addWidget(self.restore_button)
+        self.trash_panel.hide()
+        side_layout.addWidget(self.trash_panel, 1)
+        self.trash_button = QPushButton("Trash")
+        self.trash_button.setObjectName("sessionTrash")
+        self.trash_button.setIcon(icon("trash"))
+        self.trash_button.setCheckable(True)
+        self.trash_button.setAccessibleName("Open session trash")
+        self.trash_button.setToolTip("View and restore removed sessions")
+        self.trash_button.toggled.connect(self.toggle_trash)
+        footer = QHBoxLayout()
+        footer.setContentsMargins(8, 4, 8, 8)
+        footer.addWidget(self.trash_button)
+        side_layout.addLayout(footer)
         self.splitter.addWidget(sidebar)
         self.content = QWidget()
         self.content_layout = QVBoxLayout(self.content)
-        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setContentsMargins(12, 0, 0, 0)
         self.title = QLabel("Select an agent session on the left.")
         self.title.setWordWrap(True)
         self.content_layout.addWidget(self.title)
@@ -164,12 +219,17 @@ class Agents(QWidget):
                 button.setIcon(icon("trash"))
                 button.setIconSize(QSize(14, 14))
                 button.setAutoRaise(True)
-                button.setFixedSize(26, 26)
-                button.setAccessibleName("Remove session from sidebar")
-                button.setToolTip("Remove from sidebar · Keeps history and running agent")
+                button.setFixedSize(20, 26)
+                button.setFocusPolicy(Qt.NoFocus)
+                button.setAccessibleName("Move session to trash")
+                button.setToolTip("Move to trash · Restore anytime · Keeps history and running agent")
                 button.clicked.connect(lambda checked=False, ident=session["id"]: QTimer.singleShot(
                     0, lambda: self.unpin_session(ident)))
-                self.tree.setItemWidget(row, 1, button)
+                actions = QWidget()
+                actions_layout = QHBoxLayout(actions)
+                actions_layout.setContentsMargins(0, 0, 0, 0)
+                actions_layout.addWidget(button, 0, Qt.AlignCenter)
+                self.tree.setItemWidget(row, 1, actions)
             add_children()
             self.signature = signature
             if self.selected_session not in self.session_rows:
@@ -194,8 +254,103 @@ class Agents(QWidget):
             context = item["text"] if item else "Ad-hoc session · No todo"
             row.setToolTip(0, f"{context}\n{session['title']}\n{session['workdir']}\n{status}"
                            + ("\nUnread agent reply" if unread else ""))
-        self.sidebar_empty.setVisible(not self.session_rows)
+        self.sidebar_empty.setVisible(not self.session_rows and not self.trash_button.isChecked())
+        self.refresh_trash()
         self.show_selected()
+
+    def toggle_trash(self, checked):
+        self.sidebar_heading.setVisible(not checked)
+        self.tree.setVisible(not checked)
+        self.sidebar_empty.setVisible(not checked and not self.session_rows)
+        self.trash_panel.setVisible(checked)
+        self.trash_button.setText(
+            f"Back to sessions · {len(self.session_rows)}" if checked else f"Trash · {self.trash_list.count()}"
+        )
+        self.trash_button.setIcon(icon("session" if checked else "trash"))
+        self.trash_button.setAccessibleName("Back to sessions" if checked else "Open session trash")
+        self.trash_button.setToolTip("Back to pinned sessions and open todos" if checked
+                                    else "View and restore removed sessions")
+        if checked:
+            self.trash_search.setFocus()
+
+    def refresh_trash(self):
+        hidden = [session for session in self.window.notebook.data["sessions"]
+                  if session["item_id"] is None and session.get("agents_hidden")]
+        signature = tuple((s["id"], s["title"], s["agent"], s["workdir"]) for s in hidden)
+        if signature != self.trash_signature:
+            selected = {item.data(Qt.UserRole) for item in self.trash_list.selectedItems()}
+            self.trash_list.clear()
+            for session in hidden:
+                row = QListWidgetItem(icon("session"), f"{session['title']}\n{session['agent']}")
+                row.setData(Qt.UserRole, session["id"])
+                row.setToolTip(session["workdir"])
+                self.trash_list.addItem(row)
+                row.setSelected(session["id"] in selected)
+            self.trash_signature = signature
+        self.filter_trash()
+        self.trash_button.setText(
+            f"Back to sessions · {len(self.session_rows)}" if self.trash_button.isChecked()
+            else f"Trash · {len(hidden)}"
+        )
+
+    def filter_trash(self):
+        query = self.trash_search.text().strip().casefold()
+        visible = 0
+        for index in range(self.trash_list.count()):
+            row = self.trash_list.item(index)
+            matches = query in (row.text() + "\n" + row.toolTip()).casefold()
+            if not matches:
+                row.setSelected(False)
+            row.setHidden(not matches)
+            visible += matches
+        self.trash_list.setVisible(bool(visible))
+        self.trash_empty.setVisible(not visible)
+        self.trash_empty.setText("No matching sessions." if self.trash_list.count()
+                                 else "Trash is empty. Removed sessions will appear here.")
+        self.trash_selection_changed()
+
+    def trash_selection_changed(self):
+        count = len(self.trash_list.selectedItems())
+        self.restore_button.setEnabled(count > 0)
+        self.restore_button.setText(f"Restore {count} sessions" if count > 1 else "Restore session")
+
+    def restore_sessions(self):
+        restored = []
+        for row in self.trash_list.selectedItems():
+            session = self.window.session(row.data(Qt.UserRole))
+            if session and session["item_id"] is None and session.get("agents_hidden"):
+                session["agents_hidden"] = False
+                restored.append(session["id"])
+        if not restored:
+            return
+        self.selected_session = restored[0]
+        self.window.schedule_save()
+        self.trash_button.setChecked(False)
+        self.tree.setCurrentItem(self.session_rows[self.selected_session])
+        self.tree.scrollToItem(self.session_rows[self.selected_session])
+        self.window.select_session(self.selected_session)
+        self.show_selected()
+
+    def session_menu(self, position):
+        row = self.tree.itemAt(position)
+        ident = row.data(0, Qt.UserRole) if row else None
+        if not ident:
+            return
+        menu = QMenu(self)
+        menu.addAction("Rename …", lambda: self.rename_session(ident))
+        menu.exec(self.tree.viewport().mapToGlobal(position))
+
+    def rename_session(self, ident):
+        session = self.window.session(ident)
+        if not session:
+            return
+        title, accepted = QInputDialog.getText(self, "Rename session", "Session name", text=session["title"])
+        title = title.strip()
+        if not accepted or not title:
+            return
+        session.update(title=title, title_custom=True)
+        self.window.session_changed(ident)
+        self.window.schedule_save()
 
     def unpin_session(self, ident):
         session = self.window.session(ident)
