@@ -247,6 +247,7 @@ class Window(QMainWindow):
         self.tasks.session_resume.connect(self.resume_session)
         self.tasks.session_reply.connect(self.show_last_reply)
         self.tasks.session_details.connect(self.session_details)
+        self.tasks.session_remove.connect(self.remove_session_link)
         self.tasks.selected.connect(self.select_session)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -929,6 +930,20 @@ class Window(QMainWindow):
     @staticmethod
     def validate_native_id(agent, value):
         validate_native_id(agent, value)
+
+    def remove_session_link(self, ident):
+        session = self.session(ident)
+        if session is None:
+            return
+        session.update(item_id=None, agents_hidden=True)
+        self.tasks.rebuild()
+        self.schedule_save()
+        self.session_changed(ident)
+        page = self.optional_pages["agents"]["widget"]
+        if page is not None and page.active():
+            self.select_session(page.selected_session)
+        elif self.selected_session == ident:
+            self.select_session(None)
 
     def session_changed(self, ident):
         session = self.session(ident)

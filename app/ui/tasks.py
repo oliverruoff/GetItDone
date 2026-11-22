@@ -522,6 +522,7 @@ class Tasks(QWidget):
     session_reply = Signal(str)
     session_resume = Signal(str)
     session_details = Signal(str)
+    session_remove = Signal(str)
     session_start = Signal()
     completion_requested = Signal(str, bool)
     new_requested = Signal(bool)
@@ -1040,7 +1041,7 @@ class Tasks(QWidget):
             row.setData(column, ROLE + 2, parent.data(column, ROLE + 2))
             row.setData(column, ROLE + 3, (parent.data(0, ROLE + 3) or 0) + 1)
             row.setData(column, ROLE + 4, parent.data(0, ROLE + 4))
-        row.setSizeHint(0, QSize(100, 26))
+        row.setSizeHint(0, QSize(100, 28))
         self.session_rows[ident] = row
         row.setToolTip(0, session["workdir"])
         row.setForeground(0, parent.foreground(0))
@@ -1058,8 +1059,25 @@ class Tasks(QWidget):
         buttons.addWidget(
             icon_button("info", "Session details", lambda checked=False: self.session_details.emit(ident))
         )
+        trash = icon_button("trash", "Remove session from todo", lambda checked=False: QTimer.singleShot(
+            0, lambda: self.session_remove.emit(ident)))
+        trash.setFixedSize(28, 24)
+        trash.setToolTip("Unlink from this todo · Keeps session history and running agent")
+        buttons.addWidget(trash)
+        for button in actions.findChildren(QPushButton):
+            button.setFixedHeight(24)
+            if button is not resume:
+                button.setFixedWidth(28)
+            buttons.setAlignment(button, Qt.AlignVCenter)
+        actions.setObjectName("sessionActions")
+        background = parent.data(0, ROLE + 2).name()
+        foreground = parent.foreground(0).color().name()
         actions.setStyleSheet(
-            f"QWidget {{ background: {parent.data(0, ROLE + 2).name()}; color: {parent.foreground(0).color().name()}; }}"
+            f"QWidget#sessionActions {{ background: {background}; }}"
+            f"QWidget#sessionActions QPushButton {{ background: {background}; color: {foreground}; "
+            "border: none; border-radius: 0; padding: 2px; }"
+            "QWidget#sessionActions QPushButton:hover { background: rgba(255,255,255,20); }"
+            "QWidget#sessionActions QPushButton:pressed { background: rgba(0,0,0,25); }"
         )
         self.tree.setItemWidget(row, 4, actions)
         self.update_session(session)

@@ -3,7 +3,7 @@ from string import Template
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QMenu, QToolButton
+from PySide6.QtWidgets import QApplication, QMenu, QPushButton, QToolButton
 
 from app.executions import execution_records
 from app.models import now_iso, uid
@@ -261,6 +261,79 @@ def test_ad_hoc_pin_persists_and_trash_only_hides_running_session(window, qtbot)
     assert session["id"] in panel.session_rows
     assert panel.selected_session == session["id"]
     assert terminal.running and terminal.seen
+
+
+@pytest.mark.parametrize("source", ["todos", "agents"])
+@pytest.mark.parametrize("session_count", [1, 2])
+def test_todo_session_trash_unlinks_in_both_views_and_persists(window, qtbot, source, session_count):
+    parent = window.notebook.add("Parent")
+    item, session = attach(window, "Task with session", parent["id"])
+    session["last_reply"] = {"text": "Keep the saved reply", "saved_at": now_iso()}
+    before = dict(session)
+    second = None
+    if session_count == 2:
+        second = dict(session, id=uid(), title="Keep this linked session")
+        window.notebook.data["sessions"].append(second)
+    window.tasks.rebuild(select=item["id"])
+    window.tasks.rows[item["id"]].setExpanded(True)
+    panel = open_agents(window, qtbot)
+    if source == "todos":
+        window.workspace.setCurrentIndex(0)
+        actions = window.tasks.tree.itemWidget(window.tasks.session_rows[session["id"]], 4)
+        button = next(b for b in actions.findChildren(QPushButton)
+                      if b.accessibleName() == "Remove session from todo")
+    else:
+        panel.tree.setCurrentItem(panel.session_rows[session["id"]])
+        button = panel.tree.itemWidget(panel.session_rows[session["id"]], 1).findChild(QToolButton)
+        assert button.accessibleName() == "Remove session from todo"
+    qtbot.mouseClick(button, Qt.LeftButton)
+    qtbot.waitUntil(lambda: session["id"] not in window.tasks.session_rows)
+    assert session["id"] not in panel.session_rows
+    assert window.session(session["id"]) is session
+    assert session == dict(before, item_id=None, agents_hidden=True)
+    assert window.notebook.get(item["id"]) is item
+    assert window.tasks.rows[item["id"]].text(3) == ("1" if second else "")
+    assert panel.trash_list.count() == 1
+    if second:
+        assert second["item_id"] == item["id"]
+        assert second["id"] in window.tasks.session_rows
+        assert panel.session_rows[second["id"]] is panel.rows[item["id"]]
+        assert panel.selected_session == second["id"]
+    else:
+        assert item["id"] not in panel.rows
+        assert parent["id"] not in panel.rows
+        assert panel.selected_session is None
+    saved = next(s for s in window.store.load()["sessions"] if s["id"] == session["id"])
+    assert saved == session
+    qtbot.mouseClick(panel.trash_button, Qt.LeftButton)
+    panel.trash_list.item(0).setSelected(True)
+    qtbot.mouseClick(panel.restore_button, Qt.LeftButton)
+    assert session["id"] in panel.session_rows
+    assert session["item_id"] is None
+    assert session["id"] not in window.tasks.session_rows
+
+
+def test_todo_session_removal_keeps_running_agent_and_agents_tab_lazy(window, qtbot):
+    item, session = attach(window, "Running linked session")
+    window.tasks.rebuild(select=item["id"])
+    assert window.launch(session, [sys.executable, "-u", "-c", "import time; time.sleep(30)"])
+    terminal = window.terminals[session["id"]]
+    window.tasks.rows[item["id"]].setExpanded(True)
+    actions = window.tasks.tree.itemWidget(window.tasks.session_rows[session["id"]], 4)
+    button = next(b for b in actions.findChildren(QPushButton)
+                  if b.accessibleName() == "Remove session from todo")
+    qtbot.mouseClick(button, Qt.LeftButton)
+    qtbot.waitUntil(lambda: session["id"] not in window.tasks.session_rows)
+    assert window.optional_pages["agents"]["widget"] is None
+    assert window.terminals[session["id"]] is terminal
+    assert terminal.running and not getattr(terminal, "stop_requested", False)
+    assert window.tabs.indexOf(terminal) >= 0
+    assert window.session(session["id"]) is session
+    panel = open_agents(window, qtbot)
+    assert session["id"] not in panel.session_rows
+    assert panel.trash_list.count() == 1
+    assert terminal.running
+    assert any(r["session_id"] == session["id"] for r in execution_records(window.notebook, window.terminals))
 
 
 def test_ended_ad_hoc_session_stays_pinned_after_terminal_close(window, qtbot):

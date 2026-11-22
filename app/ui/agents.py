@@ -214,6 +214,10 @@ class Agents(QWidget):
                 row.setData(0, Qt.UserRole, session["id"])
                 self.tree.addTopLevelItem(row)
                 self.session_rows[session["id"]] = row
+            add_children()
+            for ident, row in self.session_rows.items():
+                session = self.window.session(ident)
+                linked = session["item_id"] is not None
                 button = QToolButton()
                 button.setObjectName("unpinSession")
                 button.setIcon(icon("trash"))
@@ -221,16 +225,16 @@ class Agents(QWidget):
                 button.setAutoRaise(True)
                 button.setFixedSize(20, 26)
                 button.setFocusPolicy(Qt.NoFocus)
-                button.setAccessibleName("Move session to trash")
-                button.setToolTip("Move to trash · Restore anytime · Keeps history and running agent")
-                button.clicked.connect(lambda checked=False, ident=session["id"]: QTimer.singleShot(
+                button.setAccessibleName("Remove session from todo" if linked else "Move session to trash")
+                button.setToolTip("Unlink from this todo · Keeps session history and running agent" if linked
+                                  else "Move to trash · Restore anytime · Keeps history and running agent")
+                button.clicked.connect(lambda checked=False, ident=ident: QTimer.singleShot(
                     0, lambda: self.unpin_session(ident)))
                 actions = QWidget()
                 actions_layout = QHBoxLayout(actions)
                 actions_layout.setContentsMargins(0, 0, 0, 0)
                 actions_layout.addWidget(button, 0, Qt.AlignCenter)
                 self.tree.setItemWidget(row, 1, actions)
-            add_children()
             self.signature = signature
             if self.selected_session not in self.session_rows:
                 self.selected_session = next(iter(self.session_rows), None)
@@ -353,11 +357,7 @@ class Agents(QWidget):
         self.window.schedule_save()
 
     def unpin_session(self, ident):
-        session = self.window.session(ident)
-        if session and session["item_id"] is None:
-            session["agents_hidden"] = True
-            self.window.schedule_save()
-            self.window.select_session(self.selected_session)
+        self.window.remove_session_link(ident)
 
     def selection_changed(self, row, previous):
         ident = row.data(0, Qt.UserRole) if row else None

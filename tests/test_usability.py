@@ -138,14 +138,37 @@ def test_hierarchy_and_session_actions_are_clear_and_english(notebook):
     tasks.rebuild()
     actions = tasks.tree.itemWidget(tasks.session_rows[session["id"]], 4)
     buttons = actions.findChildren(QPushButton)
-    assert [b.text() for b in buttons] == ["Resume", "", ""]
+    assert [b.text() for b in buttons] == ["Resume", "", "", ""]
     assert buttons[1].accessibleName() == "Last reply"
     assert buttons[2].accessibleName() == "Session details"
+    assert buttons[3].accessibleName() == "Remove session from todo"
     item_buttons = tasks.tree.itemWidget(tasks.rows[root["id"]], 4).findChildren(QPushButton)
     assert all(not button.text() and button.toolTip() and button.accessibleName() for button in item_buttons)
     assert window.workspace.tabText(0) == "Tasks" and window.workspace.tabText(1) == "Knowledge"
     assert [tasks.status.itemText(n) for n in range(3)] == ["Open", "Completed", "All"]
     assert tasks.tree.headerItem().text(1) == "Color"
+
+
+def test_session_buttons_are_borderless_and_vertically_centered(notebook, qtbot):
+    window, item, *_ = notebook
+    session = dict(id=uid(), item_id=item["id"], agent="codex", title="Saved session",
+                   workdir=str(window.store.folder), native_session_id=None, created_at=now_iso())
+    window.notebook.data["sessions"].append(session)
+    window.tasks.rebuild()
+    tree = window.tasks.tree
+    window.tasks.rows[item["id"]].setExpanded(True)
+    actions = tree.itemWidget(window.tasks.session_rows[session["id"]], 4)
+    qtbot.waitUntil(lambda: actions.isVisible() and actions.height() >= 24)
+    QApplication.processEvents()
+    assert "border: none" in actions.styleSheet()
+    buttons = actions.findChildren(QPushButton)
+    assert len(buttons) == 4
+    for button in buttons:
+        assert button.height() == 24
+        assert abs(button.geometry().center().y() - actions.rect().center().y()) <= 1
+        assert button.y() >= 0
+        assert button.geometry().bottom() < actions.height()
+        assert actions.layout().itemAt(actions.layout().indexOf(button)).alignment() & Qt.AlignVCenter
 
 
 def test_compact_rows_and_terminal_window_roundtrip(notebook, qtbot):
