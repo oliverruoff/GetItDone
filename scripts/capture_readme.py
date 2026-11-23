@@ -46,8 +46,25 @@ def capture_guide():
         book.update(child["id"], reminder={"at": "2030-10-28T09:00:00+01:00", "notified_at": None})
         book.add("Capture screenshots", parent=child["id"])
         book.add("Test the new task workflow", parent=parent["id"])
-        book.add("Plan next week's priorities")
-        book.add("Collect ideas for the next milestone")
+        planning = book.add("Plan next week's priorities")
+        ideas = book.add("Collect ideas for the next milestone")
+        green = {"id": uid(), "name": "Planning", "color": "#cce6d4"}
+        orange = {"id": uid(), "name": "Ideas", "color": "#f4d9bb"}
+        book.data["categories"].extend([green, orange])
+        book.update(planning["id"], category_id=green["id"])
+        book.update(ideas["id"], category_id=orange["id"])
+        book.add("Prioritize customer feedback", parent=planning["id"])
+        book.add("Draft the roadmap", parent=planning["id"])
+        book.data["scheduled_jobs"] = [{
+            "id": uid(), "title": "Weekly project summary", "prompt": "Summarize the project status.",
+            "agent": "codex", "workdir": str(root / "Example project"), "enabled": True,
+            "next_at": "2030-11-04T09:00:00+00:00", "every": 1, "unit": "weeks", "runs": [{
+                "id": uid(), "agent": "codex", "workdir": str(root / "Example project"),
+                "prompt": "Summarize the project status.", "started_at": "2030-10-28T09:00:00+00:00",
+                "finished_at": "2030-10-28T09:01:12+00:00", "status": "completed",
+                "output": "Example output: Documentation updated. Next: review the release checklist.",
+            }],
+        }]
         canvas = store.folder / "canvas"
         canvas.mkdir(parents=True, exist_ok=True)
         (canvas / "canvas.html").write_text('''<!doctype html><html><head><meta charset="utf-8"><style>
@@ -75,15 +92,24 @@ main{max-width:960px;margin:auto} h1{font-size:38px;margin-bottom:6px} p{color:#
             pixmap = pixmap.scaledToWidth(min(pixmap.width(), 1600), Qt.SmoothTransformation)
             assert pixmap.save(str(output / name))
 
-        save(window, "tasks.png")
+        save(window, "tasks-overview-2026.png")
+        configure_style(app, "everforest")
+        window.tasks.refresh_categories()
+        window.tasks.rebuild()
+        QTest.qWait(400)
+        save(window, "tasks-dark-2026.png")
+        configure_style(app, "light")
+        window.tasks.refresh_categories()
+        window.tasks.rebuild()
+        QTest.qWait(400)
         palette = ColorPalette(category["color"], window)
         palette.show()
-        save(palette, "colors.png")
+        save(palette, "colors-2026.png")
         palette.close()
         reminder = ReminderDialog(book.get(child["id"]), window)
         reminder.when.setDateTime(QDateTime.fromString("2030-10-28T09:00:00+01:00", Qt.ISODate))
         reminder.show()
-        save(reminder, "reminder.png")
+        save(reminder, "reminder-2026.png")
         reminder.close()
         window.workspace.setCurrentIndex(1)
         QTest.qWait(1500)  # Lazy tab initialization and asynchronous folder discovery.
@@ -95,10 +121,13 @@ main{max-width:960px;margin:auto} h1{font-size:38px;margin-bottom:6px} p{color:#
                 break
         QTest.qWait(800)
         assert window.knowledge.document is not None
-        save(window, "knowledge.png")
+        save(window, "knowledge-2026.png")
         window.workspace.setCurrentIndex(2)
         QTest.qWait(2000)
-        save(window, "canvas.png")
+        save(window, "canvas-2026.png")
+        window.workspace.setCurrentIndex(4)
+        QTest.qWait(1500)
+        save(window, "scheduled-2026.png")
         window.workspace.setCurrentIndex(0)
         terminal = Terminal(window)
         window.tabs.addTab(terminal, "Demo shell · no agent running")
@@ -108,7 +137,7 @@ main{max-width:960px;margin:auto} h1{font-size:38px;margin-bottom:6px} p{color:#
         QTest.qWait(800)
         terminal.input("printf '\\033[2J\\033[HGetItDone - terminal example\\n\\nThis is a local demo shell. No AI agent is running.\\n\\nUse the toolbar to paste, copy, interrupt, maximize or pop out.\\n'\n")
         QTest.qWait(500)
-        save(window, "terminals.png")
+        save(window, "terminals-2026.png")
         terminal.stop()
         QTest.qWait(200)
         terminal.close()

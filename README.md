@@ -14,19 +14,23 @@ These screenshots were captured from the current app on Linux with **disposable 
 
 Organize work into nested tasks, add notes and colors, search or filter, and set reminders. Changes are saved locally.
 
-![Example tasks with nested subtasks, a note, a color and a reminder](docs/images/tasks.png)
+![Current Tasks view with nested subtasks, a note, colors and a reminder](docs/images/tasks-overview-2026.png)
+
+Switch to **Everforest dark mode** in Settings → Appearance:
+
+![The same task list in Everforest dark mode](docs/images/tasks-dark-2026.png)
 
 ### Knowledge
 
 Keep local notes and reference documents at hand. Edit TXT and Markdown, or view PDF and Word documents.
 
-![Knowledge tab with example documents and an editable release note](docs/images/knowledge.png)
+![Knowledge tab with example documents and an editable release note](docs/images/knowledge-2026.png)
 
 ### Coding agents, alongside your work
 
 Open an integrated terminal for a task, link or resume sessions, and inspect discovered agent context. OpenCode, Codex, Claude Code and pi are installed and authenticated separately.
 
-![Example task list with an integrated terminal](docs/images/terminals.png)
+![Example task list with an integrated terminal](docs/images/terminals-2026.png)
 
 *The screenshot uses a local demo shell; no AI agent is running.*
 
@@ -34,9 +38,15 @@ Open an integrated terminal for a task, link or resume sessions, and inspect dis
 
 Turn a local HTML page into your own workspace; an agent can help edit it. The example below is custom content, not a built-in dashboard template.
 
-![Canvas displaying a mock release planning dashboard](docs/images/canvas.png)
+![Canvas displaying a mock release planning dashboard](docs/images/canvas-2026.png)
 
-Scheduled agent tasks, execution history, optional startup and backups round out the notebook. Schedules, reminders and backups run while GetItDone is running, including when hidden in the tray.
+### Scheduled tasks and run history
+
+Schedule an agent prompt once or on a recurring interval and review its saved output. This screenshot shows a **mock schedule and run**, not an actual agent execution.
+
+![Scheduled task with example run history and output](docs/images/scheduled-2026.png)
+
+Execution history, optional startup and backups round out the notebook. Schedules, reminders and backups run while GetItDone is running, including when hidden in the tray.
 
 **File → Settings → Appearance** lets you switch between Light and the
 Everforest dark theme. Save to apply it immediately to menus, dialogs, task colors
@@ -278,7 +288,7 @@ Hover over an icon to see its tooltip.
 
 Click the plus or color dot in the **Color** column. Choose one of **16 pastel colors** to color the row immediately. **No color** clears the assignment. Subtasks keep their own colors. Existing custom colors are preserved.
 
-<img src="docs/images/colors.png" alt="Color picker with 16 light pastel shades and No color" width="260">
+<img src="docs/images/colors-2026.png" alt="Color picker with 16 light pastel shades and No color" width="260">
 
 The note icon opens a text field directly below the task. Use it for details, questions, or results. Your text is saved automatically. The trash icon next to the note deletes its contents; you can then restore them with **Undo**.
 
@@ -294,7 +304,7 @@ Tick the checkbox on the left. Completed tasks stay visible with a crossed-out t
 2. Choose a date and time in your local time zone.
 3. Click **Save**. The scheduled time appears directly in the row.
 
-<img src="docs/images/reminder.png" alt="Reminder dialog with date, time, Save, and Remove reminder" width="640">
+<img src="docs/images/reminder-2026.png" alt="Reminder dialog with date, time, Save, and Remove reminder" width="640">
 
 Click the bell again to change the reminder. **Remove reminder** clears it.
 
