@@ -4,9 +4,39 @@
 
 GetItDone is your local work notebook for macOS and Windows. Break tasks into smaller steps, add notes and reminders, and keep reference documents close at hand. Your tasks and knowledge files stay on your computer. The notebook requires no account; connected coding agents need their own installation and sign-in.
 
-![Tasks with subtasks, notes, pastel colors, and the full-width Add item button](docs/images/tasks.png)
+[Install & launch with `gid`](#installation-by-a-coding-agent-including-gid) · [First steps](#getting-started) · [User guide](#editing-and-organizing-tasks) · [Development](docs/DEVELOPMENT.md)
 
-The screenshots show the macOS interface with example data.
+## See GetItDone in action
+
+These screenshots were captured from the current app on Linux with **disposable example data**. The interface can look different on macOS and Windows. Linux desktop support is experimental.
+
+### Tasks, notes and reminders
+
+Organize work into nested tasks, add notes and colors, search or filter, and set reminders. Changes are saved locally.
+
+![Example tasks with nested subtasks, a note, a color and a reminder](docs/images/tasks.png)
+
+### Knowledge
+
+Keep local notes and reference documents at hand. Edit TXT and Markdown, or view PDF and Word documents.
+
+![Knowledge tab with example documents and an editable release note](docs/images/knowledge.png)
+
+### Coding agents, alongside your work
+
+Open an integrated terminal for a task, link or resume sessions, and inspect discovered agent context. OpenCode, Codex, Claude Code and pi are installed and authenticated separately.
+
+![Example task list with an integrated terminal](docs/images/terminals.png)
+
+*The screenshot uses a local demo shell; no AI agent is running.*
+
+### Canvas
+
+Turn a local HTML page into your own workspace; an agent can help edit it. The example below is custom content, not a built-in dashboard template.
+
+![Canvas displaying a mock release planning dashboard](docs/images/canvas.png)
+
+Scheduled agent tasks, execution history, optional startup and backups round out the notebook. Schedules, reminders and backups run while GetItDone is running, including when hidden in the tray.
 
 **File → Settings → Appearance** lets you switch between Light and the
 Everforest dark theme. Save to apply it immediately to menus, dialogs, task colors
@@ -282,8 +312,6 @@ Some Windows source installations report “Element not found” when querying n
 
 The **Knowledge** tab works with files from a local folder.
 
-![Knowledge with a file list on the left and an open text note on the right](docs/images/knowledge.png)
-
 1. Click **Choose folder** and select your knowledge folder.
 2. Select a file on the left. Use the search field to filter filenames.
 3. Click **New note** to create a text note. Its title becomes the filename.
@@ -314,10 +342,6 @@ You can use **OpenCode, Codex, Claude Code, or pi** in integrated terminals. Ins
 The linked session appears below the task. **Resume** opens its running terminal or resumes the saved session when its session ID is available. The note icon (**Last reply**) opens the latest captured assistant text directly from the notebook, without starting the agent. Replies and their unread state survive app restarts; a later reply replaces the previous one. Click **New agent message** in the status column to read it. New replies observed while the app is inactive can send a system notification. Initial history imports are quiet. Codex, Claude and pi replies are read from exact local session histories; OpenCode uses its local API. Custom profiles have no automatic reply capture. Missing histories or unavailable APIs preserve the previously saved reply.
 
 The info icon opens details such as the working folder and session ID. If an older session has no ID, it can only be resumed once the ID has been found or entered in its details.
-
-![Tasks above an integrated terminal, with copy, paste, maximize, and pop-out controls](docs/images/terminals.png)
-
-*This screenshot uses a local demo shell. No coding agent is running.*
 
 The toolbar above the terminals provides these controls, from left to right:
 
@@ -353,7 +377,7 @@ From any tab (or a popped-out terminal), **Command+T** on macOS / **Ctrl+T** on 
 
 Use the expand/collapse icon beside the task filter to expand or collapse everything. New tasks start **collapsed**. Individual expansion states and full-title/note visibility save immediately. Expanded items contain a **+** row for adding children; the entire row is clickable. Collapsed parents occupy one row. Opening a note expands its task so the editor is immediately visible.
 
-The fourth tab, **Scheduled tasks**, manages one-time and recurring agent runs. Choose the prompt, agent, working folder, local date/time and an interval in minutes, hours, days, weeks or months. Use **+ New scheduled task** below the schedule list to create a job. Each schedule shows its state, next date and run count. Select it to edit, run now, pause or delete it. The **Run history** table lists every execution with its number, local start/end times, duration and status, alongside total/success/failure counts. Select any run to read or copy its own saved output below. Task details show the current prompt/folder; **Run details** shows the original prompt/folder used for that execution. Reading output does not start the agent. **Schedule again** opens the date editor for a finished one-time job. Codex replies are displayed as text; select **Raw process output** for diagnostics. Each run retains the last 1 MB of output locally, including across restarts. Ordinary interactive terminal output still remains in memory only.
+The **Scheduled tasks** tab manages one-time and recurring agent runs. Choose the prompt, agent, working folder, local date/time and an interval in minutes, hours, days, weeks or months. Use **+ New scheduled task** below the schedule list to create a job. Each schedule shows its state, next date and run count. Select it to edit, run now, pause or delete it. The **Run history** table lists every execution with its number, local start/end times, duration and status, alongside total/success/failure counts. Select any run to read or copy its own saved output below. Task details show the current prompt/folder; **Run details** shows the original prompt/folder used for that execution. Reading output does not start the agent. **Schedule again** opens the date editor for a finished one-time job. Codex replies are displayed as text; select **Raw process output** for diagnostics. Each run retains the last 1 MB of output locally, including across restarts. Ordinary interactive terminal output still remains in memory only.
 
 Schedules run while GetItDone is open, including when hidden in the menu bar or tray. After reopening, a missed schedule runs once; recurring schedules advance to the next future date without replaying every missed occurrence. A run interrupted by an app crash is marked accordingly and is not automatically repeated. Sign in to the selected agent CLI first. Custom profiles must supply noninteractive arguments; their prompt is appended as one argument. Runs use the CLI's configured permissions and may fail if an interactive permission request is required.
 
