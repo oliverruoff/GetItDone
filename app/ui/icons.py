@@ -15,6 +15,7 @@ PATHS = {
     "expand": '<path d="m7 8 5-5 5 5M12 3v18m-5-5 5 5 5-5"/>',
     "trash": '<path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/>',
     "note": '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+    "agent": '<rect x="4" y="7" width="16" height="13" rx="3"/><path d="M12 7V4M2 12v4m20-4v4M9 12v1m6-1v1m-5 4h4"/><circle cx="12" cy="3" r="1"/>',
     "session": '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m6 9 3 3-3 3m6 0h5"/>',
     "more": '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
     "info": '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/>',

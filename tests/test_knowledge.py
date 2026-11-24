@@ -8,8 +8,23 @@ from app.knowledge import (
     create_note,
     docx_html,
     list_documents,
+    prepare_knowledge_agent,
     validate_title,
 )
+
+
+def test_knowledge_agent_guide_preserves_existing_instructions(tmp_path):
+    assert prepare_knowledge_agent(tmp_path) == tmp_path.resolve()
+    guide = tmp_path / "AGENTS.md"
+    assert "user's Knowledge folder" in guide.read_text(encoding="utf-8")
+    guide.write_text("Custom instructions", encoding="utf-8")
+    prepare_knowledge_agent(tmp_path)
+    assert guide.read_text(encoding="utf-8") == "Custom instructions"
+
+
+def test_knowledge_agent_requires_an_existing_folder(tmp_path):
+    with pytest.raises(DocumentError):
+        prepare_knowledge_agent(tmp_path / "missing")
 
 
 @pytest.mark.parametrize(

@@ -1456,9 +1456,10 @@ class Window(QMainWindow):
             terminal.close()
             terminal.deleteLater()
         self.terminals.clear()
-        canvas = self.optional_pages["canvas"]["widget"]
-        if canvas is not None:
-            canvas.terminals.clear()
+        for name in ("canvas", "knowledge"):
+            widget = self.optional_pages[name]["widget"]
+            if widget is not None:
+                widget.terminals.clear()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         self.tray.hide()
         self.close()
@@ -1470,5 +1471,9 @@ class Window(QMainWindow):
         QApplication.instance().exit(0)
 
     def all_terminals(self):
-        canvas = self.optional_pages["canvas"]["widget"]
-        return [*self.terminals.values(), *(canvas.terminals if canvas is not None else [])]
+        terminals = list(self.terminals.values())
+        for name in ("canvas", "knowledge"):
+            widget = self.optional_pages[name]["widget"]
+            if widget is not None:
+                terminals.extend(widget.terminals)
+        return terminals

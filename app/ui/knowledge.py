@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSplitter,
     QStackedWidget,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -32,8 +33,9 @@ from app.knowledge import (
     create_note,
     docx_html,
     list_documents,
+    prepare_knowledge_agent,
 )
-from app.ui.common import Job, SafeBrowser, error
+from app.ui.common import Job, SafeBrowser, confirm, error
 from app.ui.icons import icon, icon_button
 
 
@@ -99,16 +101,23 @@ class Knowledge(QWidget):
         layout = QVBoxLayout(self)
         toolbar = QHBoxLayout()
         self.toolbar_buttons = []
+        self.terminals = []
+        folder_button = QPushButton(icon("folder"), "Choose folder")
+        folder_button.clicked.connect(self.choose_folder)
+        note_button = QPushButton(icon("note"), "New note")
+        note_button.clicked.connect(self.new_note)
+        agent_button = icon_button("agent", "Open agent …", self.open_agent)
+        for button in (folder_button, note_button, agent_button):
+            toolbar.addWidget(button)
+            self.toolbar_buttons.append(button)
         for name, title, handler in [
-            ("folder", "Choose folder", self.choose_folder),
-            ("note", "New note", self.new_note),
             ("refresh", "Refresh", self.refresh),
             ("save", "Save", self.save_clicked),
             ("copy", "Save as new note", self.save_copy),
             ("external", "Open externally", self.open_external),
             ("trash", "Delete file", self.delete_file),
         ]:
-            if name in ("folder", "note", "copy", "external"):
+            if name in ("copy", "external"):
                 button = QPushButton(icon(name), title)
                 button.clicked.connect(handler)
             else:
@@ -179,7 +188,16 @@ class Knowledge(QWidget):
         right.addWidget(self.stack, 1)
         self.splitter.addWidget(content)
         self.splitter.setSizes([240, 900])
-        layout.addWidget(self.splitter, 1)
+        workspace = self.document_workspace = QSplitter(Qt.Vertical)
+        workspace.addWidget(self.splitter)
+        self.agent_tabs = QTabWidget()
+        self.agent_tabs.setTabsClosable(True)
+        self.agent_tabs.tabCloseRequested.connect(self.close_agent)
+        workspace.addWidget(self.agent_tabs)
+        workspace.setStretchFactor(0, 2)
+        workspace.setStretchFactor(1, 1)
+        self.agent_tabs.hide()
+        layout.addWidget(workspace, 1)
         self.autosave = QTimer(self)
         self.autosave.setSingleShot(True)
         self.autosave.setInterval(700)
@@ -196,7 +214,65 @@ class Knowledge(QWidget):
             self.settings["knowledge_last_file"] = ""
             self.settings_changed.emit()
             self.clear_document()
+            try:
+                prepare_knowledge_agent(folder)
+            except (DocumentError, OSError) as exc:
+                error(self, f"Could not prepare Knowledge agent: {exc}")
             self.refresh()
+
+    def open_agent(self):
+        from app.terminal.bridge import Terminal
+        from app.ui.dialogs import SessionDialog
+
+        if not self.guard():
+            return
+        try:
+            folder = prepare_knowledge_agent(self.folder)
+        except (DocumentError, OSError) as exc:
+            error(self, f"Could not prepare Knowledge agent: {exc}")
+            return
+        dialog = SessionDialog(self.settings, self, fixed_directory=folder)
+        dialog.setWindowTitle("Knowledge agent")
+        if not dialog.exec():
+            return
+        terminal = Terminal(self)
+        try:
+            terminal.start(dialog.command, str(folder))
+        except Exception as exc:
+            terminal.deleteLater()
+            error(self, f"Could not start Knowledge agent: {exc}")
+            return
+        self.terminals.append(terminal)
+        title = dialog.title.text().strip() or dialog.agent.currentText()
+        index = self.agent_tabs.addTab(terminal, f"{title} · {folder.name or folder}")
+        self.agent_tabs.setTabToolTip(index, str(folder))
+        self.agent_tabs.setCurrentIndex(index)
+        self.agent_tabs.show()
+        if len(self.terminals) == 1:
+            height = self.document_workspace.height()
+            self.document_workspace.setSizes([height * 2 // 3, height // 3])
+
+    def close_agent(self, index):
+        terminal = self.agent_tabs.widget(index)
+        if terminal.running:
+            if terminal.property("knowledgeClosing") or not confirm(
+                self, "Close Knowledge agent", "Stop this agent and its child processes?"
+            ):
+                return
+            terminal.setProperty("knowledgeClosing", True)
+            terminal.ended.connect(lambda _code: self.remove_agent(terminal))
+            terminal.stop()
+        else:
+            self.remove_agent(terminal)
+
+    def remove_agent(self, terminal):
+        if terminal not in self.terminals:
+            return
+        terminal.close()
+        self.agent_tabs.removeTab(self.agent_tabs.indexOf(terminal))
+        self.terminals.remove(terminal)
+        terminal.deleteLater()
+        self.agent_tabs.setVisible(bool(self.terminals))
 
     def clear_document(self):
         self.generation += 1
